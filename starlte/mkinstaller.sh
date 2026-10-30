@@ -46,10 +46,11 @@ case "$PART" in *[!A-Za-z0-9_]*|'') echo "mkinstaller.sh: -p $PART: a partition 
 
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/scion-installer.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
-# The boot image: the time limit of -t, the kernel on cores 2-3 and the loader on core 0 serving the flash (ufs=2), the
-# drivers that have a safe default, and the system image's partition. Core 1 is never the kernel's: S-Boot powers it up
-# and parks it before the hand-over (seen on the phone, 29 October 2026), so a kernel started there never runs.
-ARGS="cpus=4 bootcpu=2 exynos_keys=1 max77705=1 panel=1 s6sy761=1 ufs=2 system_apfs=ufs_$PART $*"
+# The boot image: the time limit of -t, the kernel on A55 cores 2-3 and the loader on core 0 serving the flash (ufs=2),
+# the drivers that have a safe default, and the system image's partition. Core 1 is never the kernel's: S-Boot powers it
+# up and parks it before the hand-over (seen on the phone, 29 October 2026). Nor are the M3s yet: the firmware's CPU_ON
+# for one never returns (30 October).
+ARGS="cpus=2 bootcpu=2 exynos_keys=1 max77705=1 panel=1 s6sy761=1 ufs=2 system_apfs=ufs_$PART $*"
 "$KREPO/devices/starlte/mkimage.sh" -o "$WORK/boot.img" -k "$KERNEL" -r "$ROOT" -s "$SECS" $ARGS | sed 's/^/  /'
 BUILD="Scion $(git -C "$KREPO" describe --always --dirty 2>/dev/null || echo '?'), $(date -u +%Y-%m-%d), system on $PART$([ "$SECS" = 0 ] || echo ", back to TWRP after $SECS s")"
 sed -e "s|@BUILD@|$BUILD|" -e "s|@PART@|$PART|" "$HERE/installer.prop.in" > "$WORK/installer.prop.in"
