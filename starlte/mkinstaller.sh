@@ -4,7 +4,7 @@
 # init makes it the root (boot-arg system_apfs=ufs_PARTITION, the flash read through the loader: ufs=2).
 #
 #   starlte/mkinstaller.sh -s system.apfs [-K kernel-repo] [-k kernel] [-r root.apfs] [-p PARTITION] [-t SECS]
-#                          [-o installer.zip] [extra boot-args...]
+#                          [-V] [-o installer.zip] [extra boot-args...]
 #
 #   -s  the iOS system image (userland/system.apfs of the kernel repo, built from your own IPSW)
 #   -K  the kernel repository (Scion-Project/hackios-xnu-kernel), for its devices/starlte/mkimage.sh and loader;
@@ -16,6 +16,8 @@
 #   -t  a test run: after SECS seconds the loader takes the phone back, keeps the log in pstore and restarts into TWRP
 #       (0, the default: no time limit; five fingers on the screen or Vol Down + Power still end it)
 #   -o  the zip (out/scion-starlte-installer.zip)
+#   -V  verbose: the kernel's log on the screen while it starts (mkimage.sh without -q). Off by default: on the phone
+#       it covers the screen and makes iOS hard to use; the log is in pstore, and live over USB with usb_gadget=5.
 #
 # The zip carries iOS's own files, from your IPSW, and the loader carries your iPhone's identity: it is yours to hand on
 # privately, never to be published or committed (.gitignore keeps it out of this repository).
@@ -23,10 +25,10 @@ set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/.." && pwd)
 KREPO=${SCION_KERNEL:-$REPO/../hackios-xnu-kernel}
-SYSTEM= KERNEL= ROOT= PART=SYSTEM SECS=0 OUT=$REPO/out/scion-starlte-installer.zip
-while getopts s:K:k:r:p:t:o: opt; do
+SYSTEM= KERNEL= ROOT= PART=SYSTEM SECS=0 OUT=$REPO/out/scion-starlte-installer.zip QUIET=-q
+while getopts s:K:k:r:p:t:o:V opt; do
 	case $opt in
-	s) SYSTEM=$OPTARG ;; K) KREPO=$OPTARG ;; k) KERNEL=$OPTARG ;; r) ROOT=$OPTARG ;; p) PART=$OPTARG ;; t) SECS=$OPTARG ;; o) OUT=$OPTARG ;;
+	s) SYSTEM=$OPTARG ;; K) KREPO=$OPTARG ;; k) KERNEL=$OPTARG ;; r) ROOT=$OPTARG ;; p) PART=$OPTARG ;; t) SECS=$OPTARG ;; o) OUT=$OPTARG ;; V) QUIET= ;;
 	*) sed -n 2,20p "$0"; exit 2 ;;
 	esac
 done
@@ -51,7 +53,7 @@ trap 'rm -rf "$WORK"' EXIT
 # up and parks it before the hand-over (seen on the phone, 29 October 2026). Nor are the M3s yet: the firmware's CPU_ON
 # for one never returns (30 October).
 ARGS="cpus=2 bootcpu=2 exynos_keys=1 max77705=1 panel=1 s6sy761=1 ufs=2 system_apfs=ufs_$PART $*"
-"$KREPO/devices/starlte/mkimage.sh" -o "$WORK/boot.img" -k "$KERNEL" -r "$ROOT" -s "$SECS" $ARGS | sed 's/^/  /'
+"$KREPO/devices/starlte/mkimage.sh" $QUIET -o "$WORK/boot.img" -k "$KERNEL" -r "$ROOT" -s "$SECS" $ARGS | sed 's/^/  /'
 BUILD="Scion $(git -C "$KREPO" describe --always --dirty 2>/dev/null || echo '?'), $(date -u +%Y-%m-%d), system on $PART$([ "$SECS" = 0 ] || echo ", back to TWRP after $SECS s")"
 sed -e "s|@BUILD@|$BUILD|" -e "s|@PART@|$PART|" "$HERE/installer.prop.in" > "$WORK/installer.prop.in"
 mkdir -p "$(dirname "$OUT")"
