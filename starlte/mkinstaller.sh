@@ -52,7 +52,11 @@ trap 'rm -rf "$WORK"' EXIT
 # the drivers that have a safe default, and the system image's partition. Core 1 is never the kernel's: S-Boot powers it
 # up and parks it before the hand-over (seen on the phone, 29 October 2026). Nor are the M3s yet: the firmware's CPU_ON
 # for one never returns (30 October).
-ARGS="cpus=2 bootcpu=2 exynos_keys=1 max77705=1 panel=1 s6sy761=1 ufs=2 system_apfs=ufs_$PART $*"
+# Seen working on the phone, 1 November: the USB-C switch to the AP (max77705_usbsw=1) and the USB log and console
+# (usb_gadget=5, /dev/cu.usbmodem* on a Mac), the A55s at 1.79 GHz through ACPM (cpufreq_lit), the GPU for programs and
+# CoreAnimation (mali=9), the vibration motor (max77705_haptic=1), the thermal stop at 110 C (tmu=3), and the whole log
+# kept for TWRP's /proc/last_kmsg (esslog=1).
+ARGS="cpus=2 bootcpu=2 exynos_keys=1 max77705=1 panel=1 s6sy761=1 max77705_usbsw=1 usb_gadget=5 cpufreq_lit=1794000 mali=9 max77705_haptic=1 tmu=3 esslog=1 ufs=2 system_apfs=ufs_$PART $*"
 "$KREPO/devices/starlte/mkimage.sh" $QUIET -o "$WORK/boot.img" -k "$KERNEL" -r "$ROOT" -s "$SECS" $ARGS | sed 's/^/  /'
 BUILD="Scion $(git -C "$KREPO" describe --always --dirty 2>/dev/null || echo '?'), $(date -u +%Y-%m-%d), system on $PART$([ "$SECS" = 0 ] || echo ", back to TWRP after $SECS s")"
 sed -e "s|@BUILD@|$BUILD|" -e "s|@PART@|$PART|" "$HERE/installer.prop.in" > "$WORK/installer.prop.in"
