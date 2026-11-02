@@ -83,3 +83,68 @@ To leave Scion, either:
 - or force a restart with Vol Down + Power.
 
 To get Android back, restore the `Boot` and `System` backups in TWRP.
+
+## The Exynos 9810 Galaxys in one zip: S9, S9+, Note9 (`universal/`)
+
+One zip for the Galaxy S9 (SM-G960F, `starlte`), the Galaxy S9+ (SM-G965F, `star2lte`) and the Galaxy Note9 (SM-N960F,
+`crownlte`), with a boot image for each phone it was made for and one iOS system image. **Nobody has run Scion on an S9+ or a
+Note9.** Their boot images borrow the S9's UEFI (no UEFI exists for them: hakios-star2lte and hakios-crownlte, README,
+"The UEFI"), their first runs are tests, and their default boot-arguments start no driver of the board's.
+
+What the zip does in TWRP (`universal/update-binary`, a shell script):
+1. It finds out which phone it is on from the boot loader's id (`ro.boot.bootloader`: G960F..., G965F..., N960F...; the
+   Duos FD models carry the F's), the model and the device name. Each that is set must name the same phone, and the boot
+   loader's id or the model must be set. Anything else is refused before anything is written: another phone, a phone
+   whose ids disagree, a phone the zip has no image for, and the Korean models (G960N, G965N, N960N) unless the zip was
+   made with `-N` (their boards' device trees were never read).
+2. It writes the iOS system image to `SYSTEM`, then that phone's boot image to `BOOT`, each read back and checked against
+   its SHA-256.
+3. Only a zip made with `-U`, and still named `*format-userdata*` when it is flashed, also formats `USERDATA` as HFS Plus
+   for a persistent `/private/var` (**Android's data is lost**). USERDATA's size differs from phone to phone and with the
+   storage (64 to 512 GB), so the volume is made at build time for each size given (`-u DEVICE=BLOCKS`, the kernel
+   repository's `tools/mkdatavol.py --userdata`); a phone with a size the zip has no volume for is told the `-u` to build
+   with, and nothing is written. Before writing, USERDATA must be unmounted and have no holder (no dm-crypt); after, the
+   volume's head and tail are read back and checked.
+4. It never writes `EFS`, `SEC_EFS`, `CPEFS`, `RADIO`, `RECOVERY` or the rest of the boot chain: they are refused by
+   name, and by the block device they resolve to, before every write.
+
+The boot-arguments:
+- the S9's are `starlte/mkinstaller.sh`'s, read from that file, so the two installers never differ;
+- the S9+'s and the Note9's are `cpus=2 bootcpu=2 ufs=2 tmu=3 esslog=1 system_apfs=ufs_SYSTEM` (the SoC's, seen on the
+  S9: two A55s, the flash through the loader, the thermal stop, the log kept for TWRP), with a 120 s time limit after
+  which the run goes back to TWRP with its log. Touch, keys, battery, USB, GPU: add them one at a time with `-a`, as each
+  phone's README orders them ("First runs").
+
+### Build
+
+In the kernel repository, with the three device repositories synced (`tools/hakios-device.py sync starlte star2lte
+crownlte`; the S9+'s and the Note9's are private for now), one kernel per phone:
+
+```sh
+make starlte_defconfig  && make kernel && cp hakios-kernel /tmp/k-starlte
+make star2lte_defconfig && make kernel && cp hakios-kernel /tmp/k-star2lte
+make crownlte_defconfig && make kernel && cp hakios-kernel /tmp/k-crownlte
+make loader && make images && (source ./xnu-env.sh; cd userland && GL=1 NO_AIR=1 REST=1 ALONE=1 RC=rc.launchd bash build.sh)
+```
+
+Then here:
+
+```sh
+SCION_KERNEL=/path/to/hackios-xnu-kernel universal/mkinstaller.sh -s /path/to/hackios-xnu-kernel/userland/system.apfs \
+    -k starlte=/tmp/k-starlte -k star2lte=/tmp/k-star2lte -k crownlte=/tmp/k-crownlte
+# -> out/scion-exynos9810-installer.zip
+# a persistent /private/var as well, for an S9 of 64 GB (USERDATA 13615227 blocks):
+#   ... -U -u starlte=13615227      -> out/scion-exynos9810-installer-format-userdata.zip (MKFS=newfs_hfs on a Mac)
+```
+
+`universal/selftest.sh` (and `-U`, with `mkfs.hfsplus` or `MKFS=newfs_hfs`) makes the zip from stand-ins and runs it
+against a pretend TWRP: each phone gets its own image, the refusals refuse, EFS and the rest stay untouched. It needs
+nothing of Apple's or Samsung's. `SH="busybox sh"` runs update-binary under busybox's shell, as TWRP does.
+
+**The system image is never in this repository or in the zip's sources.** It is built from your own IPSW, as for the S9
+alone; the S9's CI job (hakios-starlte, `s9-installer`) downloads the IPSW from Apple's CDN at run time, builds it, and
+uploads only an encrypted archive. That job does not make the universal zip yet: it clones only hakios-starlte, and the
+S9+'s and the Note9's repositories are private, so it would need a token for them, two more kernels, and this script in
+place of `starlte/mkinstaller.sh`.
+
+The zip has no Zip64 (TWRP's reader): the system image and three boot images fit under 4 GiB with room to spare.

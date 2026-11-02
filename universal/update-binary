@@ -1,0 +1,196 @@
+#!/sbin/sh
+# Scion's installer for the Exynos 9810 Galaxys (the S9, the S9+, the Note9), run by TWRP. It finds out which phone this
+# is, refuses any other, and writes that phone's boot image to BOOT and the iOS system image to the partition
+# installer.prop names (SYSTEM), each read back and checked by its SHA-256. A zip made with -U and still named
+# *format-userdata* also formats USERDATA (Android's data is lost). Nothing else is ever written: EFS, SEC_EFS, CPEFS,
+# RADIO, RECOVERY and the rest of the boot chain are refused by name and by the block device they resolve to.
+#
+# TWRP passes the updater's API version, the pipe to its screen and this zip. Nothing is unpacked: TWRP often has no unzip,
+# and the system image is 2.5 GB, so every member is stored and copied straight out of the zip from the offset
+# installer.prop gives. installer.prop is the zip's first member, so its own place is fixed.
+OUTFD=$2
+ZIP=$3
+PROP_OFF=50             # 30 bytes of local header + "scion/installer.prop" (20)
+PROP_SIZE=4096
+BS=4096
+
+ui_print() { echo "ui_print $1" > /proc/self/fd/$OUTFD; echo "ui_print" > /proc/self/fd/$OUTFD; }
+progress() { echo "set_progress $1" > /proc/self/fd/$OUTFD; }
+abort() { ui_print "ERROR: $1"; ui_print "$WRITTEN"; exit 1; }
+WRITTEN="Nothing was written."
+
+# a partition by its name, wherever this recovery keeps the names
+part() {
+	for d in /dev/block/by-name /dev/block/platform/*/by-name /dev/block/bootdevice/by-name; do
+		[ -e "$d/$1" ] && { readlink -f "$d/$1"; return 0; }
+	done
+	return 1
+}
+
+# the block devices this installer may never write, resolved now: a target that is one of them is refused, whatever
+# its name (a by-name link pointing somewhere unexpected included)
+NEVER=
+for n in EFS SEC_EFS CPEFS RADIO CP_DEBUG RECOVERY PARAM PERSISTENT STEADY BOTA0 BOTA1 DTB DTBO KEYSTORAGE NAD_REFER; do
+	p=$(part "$n") && NEVER="$NEVER $p"
+done
+writable() { # NAME DEVICE: may this be written?
+	case "$1" in EFS|SEC_EFS|CPEFS|RADIO|CP_DEBUG|RECOVERY|PARAM|PERSISTENT|STEADY|BOTA*|DTB*|KEYSTORAGE|NAD_REFER) return 1 ;; esac
+	case "$1" in BOOT|USERDATA|"$SYSTEM_PART") ;; *) return 1 ;; esac
+	[ "$1" != USERDATA ] || [ "$FORMAT_USERDATA" = 1 ] || return 1
+	for p in $NEVER; do [ "$p" = "$2" ] && return 1; done
+	[ -b "$2" ]
+}
+
+# copy LENGTH bytes from OFFSET of the zip to DEVICE (whose partition is NAME), then check them against SHA
+member() { # what OFFSET LENGTH DEVICE SHA NAME
+	writable "$6" "$4" || abort "$4 ($6) is not a partition this installer writes"
+	ui_print "  writing $1 ($(($3 / 1048576)) MB) to $4"
+	WRITTEN="Something was written: restore your TWRP backup before booting."
+	tail -c +$(($2 + 1)) "$ZIP" | head -c $3 > "$4" || abort "writing $1 to $4 failed"
+	sync
+	ui_print "  checking $1 as written"
+	got=$(head -c $3 "$4" | sha256sum | cut -d' ' -f1)
+	[ "$got" = "$5" ] || abort "$1 on $4 reads back wrong (sha256 $got, want $5)"
+}
+
+ui_print " "
+ui_print "Scion for the Exynos 9810 Galaxys"
+ui_print " "
+tail -c +$((PROP_OFF + 1)) "$ZIP" | head -c $PROP_SIZE > /tmp/scion-installer.prop
+. /tmp/scion-installer.prop || abort "this zip's installer.prop cannot be read"
+[ "$SCION_INSTALLER" = 2 ] || abort "this zip's installer.prop is not one of universal/mkinstaller.sh's"
+ui_print "  $SCION_BUILD"
+
+# Which phone. The boot loader's id (ro.boot.bootloader, from S-Boot: G960FXXU..., G965F..., N960F...; the Duos FD
+# models carry the F's), the model and the device name: each that is set must point at the same phone, and the boot
+# loader's or the model's must be set.
+bootloader=$(getprop ro.boot.bootloader)
+[ -n "$bootloader" ] || bootloader=$(getprop ro.bootloader)
+model=$(getprop ro.product.model)
+[ -n "$model" ] || model=$(getprop ro.product.vendor.model)
+device=$(getprop ro.product.device)
+[ -n "$device" ] || device=$(getprop ro.product.vendor.device)
+ui_print "  this phone: boot loader \"$bootloader\", model \"$model\", device \"$device\""
+by_id() { # an id (boot loader or model, without SM-) -> the phone; Korean models only with KOREAN=1
+	case "$1" in
+	G960F*) echo starlte ;; G965F*) echo star2lte ;; N960F*) echo crownlte ;;
+	G960N*) [ "$KOREAN" = 1 ] && echo starlte || echo korean ;;
+	G965N*) [ "$KOREAN" = 1 ] && echo star2lte || echo korean ;;
+	N960N*) [ "$KOREAN" = 1 ] && echo crownlte || echo korean ;;
+	'') ;;
+	*) echo unknown ;;
+	esac
+}
+from_bl=$(by_id "$bootloader")
+from_model=$(by_id "${model#SM-}")
+case "$device" in
+starlte|starltexx|starltekor) from_dev=starlte ;;
+star2lte|star2ltexx|star2ltekor) from_dev=star2lte ;;
+crownlte|crownltexx|crownltekor) from_dev=crownlte ;;
+'') from_dev= ;;
+*) from_dev=unknown ;;
+esac
+PHONE=
+for f in "$from_bl" "$from_model" "$from_dev"; do
+	case "$f" in
+	'') ;;
+	korean) abort "a Korean model: its board's device tree was never read; this zip was made without -N" ;;
+	unknown) abort "not a Galaxy S9, S9+ or Note9 (SM-G960F/FD, SM-G965F/FD, SM-N960F/FD)" ;;
+	*) [ -z "$PHONE" ] || [ "$PHONE" = "$f" ] || abort "the boot loader, model and device name disagree on which phone this is"
+	   PHONE=$f ;;
+	esac
+done
+[ -n "$from_bl$from_model" ] || abort "neither the boot loader's id nor the model is known to this recovery: cannot tell which phone this is"
+case "$PHONE" in
+starlte) NAME="Galaxy S9" ;;
+star2lte) NAME="Galaxy S9+ (never run on one: the S9's UEFI, borrowed)" ;;
+crownlte) NAME="Galaxy Note9 (never run on one: the S9's UEFI, borrowed)" ;;
+esac
+KEY=$(echo "$PHONE" | tr a-z A-Z)
+case " $DEVICES " in
+*" $PHONE "*) ;;
+*) abort "this zip has no image for the $PHONE (it was made for: $DEVICES)" ;;
+esac
+eval "BOOT_OFF=\$BOOT_${KEY}_OFF BOOT_SIZE=\$BOOT_${KEY}_SIZE BOOT_SHA256=\$BOOT_${KEY}_SHA256 BOOT_ARGS=\$BOOT_${KEY}_ARGS"
+ui_print "  -> $NAME"
+ui_print "  its boot-args: $BOOT_ARGS"
+
+BOOT=$(part BOOT) || abort "no BOOT partition found"
+SYS=$(part "$SYSTEM_PART") || abort "no $SYSTEM_PART partition found"
+writable BOOT "$BOOT" || abort "BOOT ($BOOT) is not writable here, or is one of the partitions never written"
+writable "$SYSTEM_PART" "$SYS" || abort "$SYSTEM_PART ($SYS) is not writable here, or is one of the partitions never written"
+boot_room=$(blockdev --getsize64 "$BOOT")
+sys_room=$(blockdev --getsize64 "$SYS")
+[ "$BOOT_SIZE" -le "$boot_room" ] || abort "the boot image ($BOOT_SIZE bytes) does not fit BOOT ($boot_room)"
+[ "$SYSTEM_SIZE" -le "$sys_room" ] || abort "the system image ($SYSTEM_SIZE bytes) does not fit $SYSTEM_PART ($sys_room)"
+ui_print "  BOOT $BOOT, $SYSTEM_PART $SYS ($((sys_room / 1048576)) MB)"
+
+# USERDATA, only for a zip made with -U and still named for it; everything checked before anything is written
+UD=
+if [ "$FORMAT_USERDATA" = 1 ]; then
+	case "$(basename "$ZIP")" in
+	*format-userdata*) ;;
+	*) abort "this zip formats USERDATA, and its name no longer says format-userdata: rename it back to install it" ;;
+	esac
+	UD=$(part USERDATA) || abort "no USERDATA partition found"
+	writable USERDATA "$UD" || abort "USERDATA ($UD) is not writable here"
+	ud_bytes=$(blockdev --getsize64 "$UD")
+	[ $((ud_bytes % BS)) = 0 ] || abort "USERDATA is $ud_bytes bytes, not whole blocks of $BS"
+	ud_blocks=$((ud_bytes / BS))
+	eval "UH_OFF=\${UHEAD_${KEY}_${ud_blocks}_OFF:-} UH_SIZE=\${UHEAD_${KEY}_${ud_blocks}_SIZE:-}"
+	eval "UH_BLOCKS=\${UHEAD_${KEY}_${ud_blocks}_BLOCKS:-} UH_SHA=\${UHEAD_${KEY}_${ud_blocks}_DATA_SHA256:-}"
+	eval "UT_OFF=\${UTAIL_${KEY}_${ud_blocks}_OFF:-} UT_SIZE=\${UTAIL_${KEY}_${ud_blocks}_SIZE:-}"
+	eval "UT_SHA=\${UTAIL_${KEY}_${ud_blocks}_SHA256:-} UT_SEEK=\${UTAIL_${KEY}_${ud_blocks}_SEEK:-}"
+	if [ -z "$UH_OFF" ] || [ -z "$UT_SEEK" ]; then
+		ui_print "  This phone's USERDATA is $ud_blocks blocks of $BS, and this zip has no volume for that size."
+		ui_print "  Make the zip again with: -u $PHONE=$ud_blocks"
+		ui_print "  (or by hand: tools/mkdatavol.py --userdata $ud_blocks OUTDIR in the kernel repository)"
+		abort "no USERDATA volume for $ud_blocks blocks"
+	fi
+	[ $((UT_SEEK + UT_SIZE / BS)) = "$ud_blocks" ] || abort "the volume's tail does not end where USERDATA does"
+	for m in /data /sdcard /storage/emulated /data/media; do umount "$m" 2>/dev/null; done
+	grep -q "^$UD " /proc/mounts && abort "USERDATA is still mounted: unmount Data in TWRP's Mount menu, then try again"
+	holders=$(ls "/sys/class/block/${UD##*/}/holders" 2>/dev/null)
+	[ -z "$holders" ] || abort "USERDATA is held by $holders (encryption?): format Data in TWRP first, then try again"
+	ui_print "  USERDATA $UD: $ud_blocks blocks; it will be formatted (HFS Plus, for /private/var)"
+fi
+
+for m in /system /system_root /mnt/system /vendor; do umount "$m" 2>/dev/null; done
+progress 0.1
+ui_print " "
+ui_print "The iOS system image -> $SYSTEM_PART (a few minutes)"
+member "the system image" "$SYSTEM_OFF" "$SYSTEM_SIZE" "$SYS" "$SYSTEM_SHA256" "$SYSTEM_PART"
+progress 0.8
+if [ -n "$UD" ]; then
+	ui_print "USERDATA -> an empty HFS Plus volume (Android's data is gone)"
+	writable USERDATA "$UD" || abort "USERDATA ($UD) is not writable here"
+	WRITTEN="Something was written: restore your TWRP backup before booting."
+	tail -c +$((UH_OFF + 1)) "$ZIP" | head -c $UH_SIZE | gunzip -c | dd of="$UD" bs=4194304 2>/dev/null ||
+		abort "writing the volume's head to USERDATA failed"
+	tail -c +$((UT_OFF + 1)) "$ZIP" | head -c $UT_SIZE | dd of="$UD" bs=$BS seek=$UT_SEEK 2>/dev/null ||
+		abort "writing the volume's tail to USERDATA failed"
+	sync
+	got=$(dd if="$UD" bs=$BS count=$UH_BLOCKS 2>/dev/null | sha256sum | cut -d' ' -f1)
+	[ "$got" = "$UH_SHA" ] || abort "USERDATA's head reads back wrong (sha256 $got, want $UH_SHA)"
+	got=$(dd if="$UD" bs=$BS skip=$UT_SEEK count=$((UT_SIZE / BS)) 2>/dev/null | sha256sum | cut -d' ' -f1)
+	[ "$got" = "$UT_SHA" ] || abort "USERDATA's tail reads back wrong (sha256 $got, want $UT_SHA)"
+	ui_print "  checked: USERDATA's head and tail read back right"
+fi
+progress 0.9
+ui_print "Scion's boot image for the $PHONE -> BOOT"
+member "the boot image" "$BOOT_OFF" "$BOOT_SIZE" "$BOOT" "$BOOT_SHA256" BOOT
+progress 1.0
+ui_print " "
+ui_print "Done. Reboot > System starts Scion."
+if [ "$PHONE" = starlte ]; then
+	ui_print "To leave it: hold five fingers on the screen for 1.5 s"
+	ui_print "(back to TWRP, with the log), or Vol Down + Power."
+else
+	ui_print "Nobody has run Scion on this phone: the first run is a test"
+	ui_print "(hakios-$PHONE's README, \"First runs\"). Touch is off; the run"
+	ui_print "goes back to TWRP by itself after its time limit, with the log in"
+	ui_print "/sys/fs/pstore. Vol Down + Power forces a restart; a black screen"
+	ui_print "that stays: Download mode, and flash the stock BOOT."
+fi
+ui_print "Android back: restore your BOOT and $SYSTEM_PART backups$([ -n "$UD" ] && echo ", and format Data")."
+exit 0
