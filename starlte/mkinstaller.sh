@@ -10,7 +10,7 @@
 #   -K  the kernel repository (Scion-Project/hackios-xnu-kernel), for its devices/starlte/mkimage.sh and loader;
 #       default $SCION_KERNEL, else ../hackios-xnu-kernel beside this repository
 #   -k  the S9's kernel (make starlte_defconfig && make kernel there); default its hakios-kernel
-#   -r  the small root, built for this: (cd userland && GL=1 NO_AIR=1 REST=1 ALONE=1 RC=rc.launchd bash build.sh);
+#   -r  the small root, built for this: (cd userland && GL=1 NO_AIR=1 REST=1 ALONE=1 RC=rc.launchd BT=1 DEVICE=starlte bash build.sh);
 #       default its userland/root.apfs
 #   -p  the partition the system image goes to (SYSTEM)
 #   -t  a test run: after SECS seconds the loader takes the phone back, keeps the log in pstore and restarts into TWRP
