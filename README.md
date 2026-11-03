@@ -11,6 +11,83 @@ Only the tooling lives here. Everything an installer carries is built locally, f
 So an installer is yours, to hand on privately. It is never published and never committed; `.gitignore` keeps `*.zip`,
 `*.img` and `*.apfs` out.
 
+## Build it in one command: `build-installer.sh`
+
+You need your own copy of iOS 16.5 (20F66) for the iPhone X: `iPhone10,3,iPhone10,6_16.5_20F66_Restore.ipsw`, 6 165 698 198
+bytes. Nothing here downloads it, and nothing here holds a key or decrypts anything. Then, in a checkout of this repository:
+
+```sh
+./build-installer.sh --ipsw ~/Downloads/iPhone10,3,iPhone10,6_16.5_20F66_Restore.ipsw
+# -> out/scion-starlte-installer.zip and out/scion-starlte-installer.zip.sha256, for the Galaxy S9
+```
+
+What it does, stopping at the first problem with what to do about it:
+1. It checks that the machine has what the build needs, and lists everything that is missing at once.
+2. It checks your IPSW: its size, its `BuildManifest.plist` (16.5, 20F66, iPhone10,3 and iPhone10,6) and its SHA-256.
+3. It clones the kernel repository at the commit pinned in the script, into `./scion-build`. Then it checks out the
+   device repositories at the revisions that commit's `devices/manifest.conf` pins (`tools/hakios-device.py sync`).
+4. It runs the build in the **Build** sections below: `sysimage/unpack.sh`, the identity, one kernel for each phone, the
+   loader, the small root and the system image. Then it runs `starlte/mkinstaller.sh`, or `universal/mkinstaller.sh`
+   when you ask for anything other than the S9 alone.
+5. It writes the zip and its SHA-256 to `./out`. Each step's log is in `scion-build/logs/`.
+
+Options:
+- `--device all`: the S9, the S9+ and the Note9 in one zip (`out/scion-exynos9810-installer.zip`). You can also give
+  `star2lte`, `crownlte` or a list such as `starlte,crownlte`. **Nobody has run Scion on an S9+ or a Note9 yet.**
+- `--format-userdata BLOCKS` (or `DEVICE=BLOCKS`, repeatable): the zip also formats USERDATA for a persistent
+  `/private/var`. **This erases Android's data.** BLOCKS is your phone's USERDATA size in 4096-byte blocks. In TWRP's
+  terminal: `echo $(( $(blockdev --getsize64 /dev/block/by-name/USERDATA) / 4096 ))`. For example, 13615227 is a 64 GB S9.
+- Extra boot-arguments go after `--`, over the defaults: `./build-installer.sh --ipsw ... -- fps_log=1`.
+- `--work DIR`, `--out DIR`, `--jobs N`, `--kernel-ref REF` (another kernel commit, for developers), `--skip-hash`.
+
+Run it again after a failure and it picks up where it stopped. The clone, the unpacked IPSW, XNU's tree and Mesa are
+kept in `scion-build`. To start clean, delete `scion-build`.
+
+What it takes:
+
+| | macOS (Apple silicon or Intel) | Linux (x86_64) |
+|---|---|---|
+| Tools | Xcode or its command-line tools (`xcode-select --install`), and `brew install sevenzip lld llvm bison meson ninja` | `sudo apt-get install build-essential git curl clang lld python3 python3-venv perl xz-utils flex bison m4 autoconf automake libtool-bin uuid-dev llvm meson ninja-build pkg-config 7zip` (Ubuntu 24.04; 7-Zip must be 23 or newer) |
+| The iOS SDK the kernel is built against | fetched by `xnu-deps/setup.sh` | theos's Linux toolchain and `iPhoneOS16.5.sdk`, from `$THEOS` or `~/theos` when they are there, otherwise fetched into `scion-build/theos` |
+| Disk | 20 GB free besides the IPSW: `scion-build` ends at about 10 GB (15 at most while it runs), the zip is 2.4 GB | the same, plus 1.5 GB for theos |
+| Time, first run | 20 minutes on a Mac mini M1 that other builds were also using: about 1 to unpack, 5 for the kernel and its dependencies, 8 for Mesa, 4 for the images | not timed with an IPSW yet; the `--open` build (no Mesa, no system image) takes 6 minutes on GitHub's runners |
+
+`--format-userdata` also needs `newfs_hfs` (part of macOS) or `mkfs.hfsplus` (Linux: `hfsprogs`).
+
+**What comes out is yours alone.** The zip carries iOS's own files from your IPSW, and the loader carries your iPhone's
+identity. Do not publish it, upload it or commit it. Install it as **Install** below says.
+
+CI (`.github/workflows/build-installer.yml`) runs the whole script on Linux on every change, with `--open`. In that
+mode there is no IPSW: the loader gets the placeholder identity (`xnuloader/mkidentity.sh --placeholder`), the small
+root is the open one, and the system image is an empty stand-in. CI also runs `universal/selftest.sh` and checks that
+the script refuses anything but the 20F66 IPSW. The zip that comes out installs, but iOS does not start from it.
+
+### Troubleshooting
+
+- **"this machine is missing what the build needs"**: run the command after each `->`, then run the script again.
+  On a Mac, Homebrew's `lld` and `llvm` are keg-only. The script finds them in `/opt/homebrew/opt` itself, so you do not
+  need to add them to `PATH`.
+- **"N bytes, not 6165698198"** or **"SHA-256 ..., not ..."**: the IPSW is incomplete or a different file. Get it
+  again. Only this one build works: `sysimage/select-system.py` knows its files.
+- **"iOS x (y), not 16.5 (20F66)"** or **"for iPhoneN,M"**: a different IPSW. The S9 build needs the iPhone X's.
+- **"... has local changes"**: something changed the kernel checkout in `scion-build`. Delete `scion-build`, or use
+  another `--work`.
+- **A step fails**: the script prints the last 60 lines of that step's log and the log's path (`scion-build/logs/`).
+  - `kernel-*.log`: XNU's build always ends with some failures for kext symbol sets. `make kernel` ignores those and
+    stops only on a real failure, which is the one to read.
+  - `userland.log` while Mesa builds: the script also prints the first failure from Mesa's own logs. Mesa needs
+    meson, ninja, `llvm-ar` (`brew install llvm`, Linux: `llvm`) and bison 3. macOS's `/usr/bin/bison` is 2.3
+    (`invalid directive: '%code'`). The script finds Homebrew's keg-only bison by itself and uses it for this step only.
+  - `unpack.log`: usually 7-Zip older than 23, or the disk filling up.
+- **Disk**: the IPSW itself is 6.2 GB. In `scion-build`, measured on a Mac: the unpacked IPSW 5.7 GB, the images
+  2.4 GB, XNU's tree 0.6 GB, its dependencies and Mesa 0.8 GB. While it unpacks, the IPSW's 4.7 GB root filesystem image
+  is also there for a while. The zip is 2.4 GB. Once the zip is made you can delete `scion-build`, but the next build
+  then starts from nothing.
+- **Linux**: the script runs on x86_64 with theos's toolchain. CI runs it on Ubuntu 24.04, so that path is tested
+  without an IPSW. The real build on Linux is the same as the one the S9's CI job runs (hakios-starlte,
+  `s9-installer`), but nobody has timed it on a desk machine yet. arm64 Linux has no theos toolchain here.
+- **Windows**: run it in WSL (Ubuntu 24.04), with `--work` in WSL's own filesystem (`~/...`), not under `/mnt/c`.
+
 ## Galaxy S9 (SM-G960F, `starlte`): `starlte/`
 
 What the zip does in TWRP (`update-binary`, a shell script):
