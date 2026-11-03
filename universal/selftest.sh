@@ -76,7 +76,8 @@ run() { # BOOTLOADER MODEL DEVICE ZIP: 0 if update-binary succeeded
 	head -c 1048576 /dev/zero > "$T/dev/BOOT"; head -c 262144 /dev/zero > "$T/dev/SYSTEM"
 	dd if=/dev/zero of="$T/dev/USERDATA" bs=4096 count=0 seek=$UBLOCKS 2>/dev/null
 	printf 'ro.boot.bootloader=%s\nro.product.model=%s\nro.product.device=%s\n' "$1" "$2" "$3" > "$T/props"
-	PATH="$T/bin:$PATH" ${SH:-sh} "$T/update-binary" 3 1 "$4" 1> "$T/twrp.out" 2>&1
+	# a pipe, as TWRP gives it: on Linux, update-binary's "> /dev/fd/1" on a file would truncate it at every line
+	PATH="$T/bin:$PATH" ${SH:-sh} "$T/update-binary" 3 1 "$4" 2>&1 | cat > "$T/twrp.out"
 }
 untouched() {
 	for p in EFS RECOVERY RADIO CPEFS; do [ "$(cat "$T/dev/$p")" = "$p untouched" ] || fail "$p was written"; done
