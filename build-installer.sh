@@ -36,7 +36,7 @@ set -euo pipefail
 # The kernel repository's commit this script was last run against end to end. Its devices/manifest.conf pins the device
 # repositories (hakios-starlte, hakios-star2lte, hakios-crownlte); tools/hakios-device.py sync checks them out there.
 KERNEL_REPO=https://github.com/Scion-Project/hackios-xnu-kernel.git
-KERNEL_REV=5dd705c6e6389073a54ba181385d17868a57276a
+KERNEL_REV=839618c2258915bcd553c650f8c6569d569e3806
 
 # The one IPSW the build is made for (sysimage/unpack.sh and select-system.py know only this one). These are facts
 # about Apple's file, published with it; the file itself is never fetched here.
@@ -114,6 +114,19 @@ else
 fi
 WORK=$(abs "$WORK") OUTDIR=$(abs "$OUTDIR")
 KREPO=$WORK/hackios-xnu-kernel
+# What the S9 is given beyond the kernel's defaults, so that the installer's S9 is the daily's, for it alone (the S9+ and
+# the Note9 keep their first run). Over the defaults: Bluetooth, the sensors and the microphone in iOS, seen working on
+# the phone but left out of devices/starlte's defaults for want of room on the line; rtc_pmic= makes the room, as the
+# daily does (all of it, with the loader's words, in the 607 characters the kernel holds, bt=7 last).
+# In the small root (GL=1 ... below): BT=1, Bluetooth's jobs and libraries; DEVICE=starlte, the firmware the S9's
+# repository carries in fw/ (ABOX's for the speakers, Wi-Fi's, Bluetooth's patch, the sensor hub's). Both do nothing on
+# the other two: their kernels start none of these drivers (bluetoothd finds no address and exits; launchd paces it).
+S9_ARGS=
+S9_USERLAND=()
+case " $DEVLIST " in *" starlte "*)
+	S9_ARGS="rtc_pmic= shub=6 abox_mic=1 bt=7"
+	S9_USERLAND=(BT=1 DEVICE=starlte) ;;
+esac
 
 # --- prerequisites: every problem at once, each with what to do --------------------------------------------------------
 case "$(uname -s)" in Darwin) HOST=macos ;; Linux) HOST=linux ;; *) die "this runs on macOS or Linux (on Windows: in WSL, in its own filesystem)" ;; esac
@@ -331,7 +344,7 @@ echo "  xnuloader/loader.efi: $(wc -c < xnuloader/loader.efi | tr -d ' ') bytes"
 # --- the small root and the system image ------------------------------------------------------------------------------
 if [ "$OPEN" = 0 ]; then
 	step "The small root and the iOS system image (userland/build.sh, with Mesa the first time: 10 to 30 minutes)"
-	if ! BISON3=$BISON3 bash -c 'source ./xnu-env.sh && export PATH="$BISON3:$PATH" && cd userland && GL=1 NO_AIR=1 REST=1 ALONE=1 RC=rc.launchd bash build.sh' > "$LOGS/userland.log" 2>&1; then
+	if ! env ${S9_USERLAND[@]+"${S9_USERLAND[@]}"} BISON3="$BISON3" bash -c 'source ./xnu-env.sh && export PATH="$BISON3:$PATH" && cd userland && GL=1 NO_AIR=1 REST=1 ALONE=1 RC=rc.launchd bash build.sh' > "$LOGS/userland.log" 2>&1; then
 		tail -40 "$LOGS/userland.log" >&2
 		M=xnu-deps/build/mesa
 		for f in $M/meson-setup.log $M/ninja.log; do
@@ -359,12 +372,13 @@ MKFAIL=
 if [ "$KIND" = starlte ]; then
 	ZIP=$OUTDIR/scion-starlte-installer.zip
 	SCION_KERNEL=$KREPO "$HERE/starlte/mkinstaller.sh" -K "$KREPO" -s "$SYSTEM" -k "$KDIR/kernel-starlte" -r "$ROOT" \
-		-o "$ZIP" ${EXTRA[@]+"${EXTRA[@]}"} > "$LOGS/mkinstaller.log" 2>&1 || MKFAIL=1
+		-o "$ZIP" $S9_ARGS ${EXTRA[@]+"${EXTRA[@]}"} > "$LOGS/mkinstaller.log" 2>&1 || MKFAIL=1
 else
 	ZIP=$OUTDIR/scion-exynos9810-installer$([ ${#UARGS[@]} = 0 ] || echo -format-userdata).zip
 	KARGS=()
 	for d in $DEVLIST; do KARGS+=(-k "$d=$KDIR/kernel-$d"); done
 	[ ${#UARGS[@]} = 0 ] || KARGS+=(-U "${UARGS[@]}")
+	[ -z "$S9_ARGS" ] || KARGS+=(-a "starlte=$S9_ARGS")
 	MKFSV=; [ "$HOST" = macos ] && MKFSV=newfs_hfs
 	MKFS=${MKFS:-${MKFSV:-mkfs.hfsplus}} SCION_KERNEL=$KREPO "$HERE/universal/mkinstaller.sh" -K "$KREPO" -s "$SYSTEM" "${KARGS[@]}" -r "$ROOT" \
 		-o "$ZIP" ${EXTRA[@]+"${EXTRA[@]}"} > "$LOGS/mkinstaller.log" 2>&1 || MKFAIL=1
