@@ -38,6 +38,10 @@ Options:
   `/private/var`. **This erases Android's data.** BLOCKS is your phone's USERDATA size in 4096-byte blocks. In TWRP's
   terminal: `echo $(( $(blockdev --getsize64 /dev/block/by-name/USERDATA) / 4096 ))`. For example, 13615227 is a 64 GB S9.
 - Extra boot-arguments go after `--`, over the defaults: `./build-installer.sh --ipsw ... -- fps_log=1`.
+- For the S9 it also gives `rtc_pmic= shub=6 abox_mic=1 bt=7` over the defaults, the daily's line (Bluetooth, the sensors
+  and the microphone in iOS; `rtc_pmic=` makes the room), and builds the small root with `BT=1 DEVICE=starlte` (Bluetooth's
+  jobs and the firmware of the S9's repository). By hand, give the same: extra boot-args for `starlte/mkinstaller.sh`,
+  `-a "starlte=rtc_pmic= shub=6 abox_mic=1 bt=7"` for `universal/mkinstaller.sh`.
 - `--work DIR`, `--out DIR`, `--jobs N`, `--kernel-ref REF` (another kernel commit, for developers), `--skip-hash`.
 
 Run it again after a failure and it picks up where it stopped. The clone, the unpacked IPSW, XNU's tree and Mesa are
@@ -119,7 +123,7 @@ In the kernel repository, with the S9's device repository synced (`tools/hakios-
 make unpack IPSW=/path/to/iPhone10,3,iPhone10,6_16.5_20F66_Restore.ipsw   # your own IPSW, once
 make starlte_defconfig && make kernel && make loader          # the S9's kernel; the loader with your IPSW's identity
 make images                                                   # userland/system.apfs (and a root.apfs, rebuilt below)
-(source ./xnu-env.sh; cd userland && GL=1 NO_AIR=1 REST=1 ALONE=1 RC=rc.launchd bash build.sh)   # the small root
+(source ./xnu-env.sh; cd userland && GL=1 NO_AIR=1 REST=1 ALONE=1 RC=rc.launchd BT=1 DEVICE=starlte bash build.sh)   # the small root
 ```
 
 Then here:
@@ -202,7 +206,7 @@ crownlte`), one kernel per phone:
 make starlte_defconfig  && make kernel && cp hakios-kernel /tmp/k-starlte
 make star2lte_defconfig && make kernel && cp hakios-kernel /tmp/k-star2lte
 make crownlte_defconfig && make kernel && cp hakios-kernel /tmp/k-crownlte
-make loader && make images && (source ./xnu-env.sh; cd userland && GL=1 NO_AIR=1 REST=1 ALONE=1 RC=rc.launchd bash build.sh)
+make loader && make images && (source ./xnu-env.sh; cd userland && GL=1 NO_AIR=1 REST=1 ALONE=1 RC=rc.launchd BT=1 DEVICE=starlte bash build.sh)
 ```
 
 Then here:
