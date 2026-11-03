@@ -1,7 +1,7 @@
 #!/bin/bash
 # The Galaxy S9's (SM-G960F, starlte) TWRP installer for Scion: one zip that writes Scion's boot image to BOOT and the
 # iOS system image to a partition of the flash (SYSTEM by default, which Android then loses), from which the kernel's
-# init makes it the root (boot-arg system_apfs=ufs_PARTITION, the flash read through the loader: ufs=2).
+# init makes it the root (boot-arg system_apfs=ufs_PARTITION, the flash read by the kernel's own UFS driver: ufs=3).
 #
 #   starlte/mkinstaller.sh -s system.apfs [-K kernel-repo] [-k kernel] [-r root.apfs] [-p PARTITION] [-t SECS]
 #                          [-V] [-o installer.zip] [extra boot-args...]
@@ -48,16 +48,19 @@ case "$PART" in *[!A-Za-z0-9_]*|'') echo "mkinstaller.sh: -p $PART: a partition 
 
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/scion-installer.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
-# The boot image: the time limit of -t, the kernel on A55 cores 2-3 and the loader on core 0 serving the flash (ufs=2),
-# the drivers that have a safe default, and the system image's partition. Core 1 is never the kernel's: S-Boot powers it
-# up and parks it before the hand-over (seen on the phone, 29 October 2026). Nor are the M3s yet: the firmware's CPU_ON
-# for one never returns (30 October).
-# Seen working on the phone, 1 November: the USB-C switch to the AP (max77705_usbsw=1) and the USB log and console
-# (usb_gadget=5, /dev/cu.usbmodem* on a Mac), the A55s at 1.79 GHz through ACPM (cpufreq_lit), the GPU for programs and
-# CoreAnimation (mali=9), the vibration motor (max77705_haptic=1), the thermal stop at 110 C (tmu=3), and the whole log
-# kept for TWRP's /proc/last_kmsg (esslog=1).
-ARGS="cpus=2 bootcpu=2 exynos_keys=1 max77705=1 panel=1 s6sy761=1 max77705_usbsw=1 usb_gadget=5 cpufreq_lit=1794000 mali=9 max77705_haptic=1 tmu=3 esslog=1 ufs=2 system_apfs=ufs_$PART $*"
-"$KREPO/devices/starlte/mkimage.sh" $QUIET -o "$WORK/boot.img" -k "$KERNEL" -r "$ROOT" -s "$SECS" $ARGS | sed 's/^/  /'
+# The boot image: the time limit of -t and the system image's partition, over the S9's defaults. Those are the kernel
+# repository's (devices/starlte/configs/starlte.config, put on every image by devices/starlte/mkimage.sh; its README.md,
+# "Defaults"): everything seen working on the phone -- six cores, the kernel's own UFS driver with /private/var kept in
+# USERDATA, touch, keys, battery, USB console, GPU and governors, brightness, zero-copy display, the RTC, the front
+# camera, the speakers and Wi-Fi. Extra boot-args given here go over them (name=value replaces a default, name= drops it).
+grep -q -- '--with' "$KREPO/devices/starlte/mkimage.sh" || {
+	echo "mkinstaller.sh: $KREPO/devices/starlte is older than the S9's defaults: tools/hakios-device.py sync starlte" >&2; exit 1; }
+ARGS="system_apfs=ufs_$PART $*"
+MADE=$("$KREPO/devices/starlte/mkimage.sh" $QUIET -o "$WORK/boot.img" -k "$KERNEL" -r "$ROOT" -s "$SECS" $ARGS)
+echo "$MADE" | sed 's/^/  /'
+# the line the image carries: the defaults with ARGS over them, as mkimage.sh said it
+EFFECTIVE=$(echo "$MADE" | sed -n 's/^mkimage.sh: boot-args: \(.*\); [^;]*$/\1/p')
+ARGS=${EFFECTIVE:-$ARGS}
 BUILD="Scion $(git -C "$KREPO" describe --always --dirty 2>/dev/null || echo '?'), $(date -u +%Y-%m-%d), system on $PART$([ "$SECS" = 0 ] || echo ", back to TWRP after $SECS s")"
 sed -e "s|@BUILD@|$BUILD|" -e "s|@PART@|$PART|" "$HERE/installer.prop.in" > "$WORK/installer.prop.in"
 mkdir -p "$(dirname "$OUT")"
