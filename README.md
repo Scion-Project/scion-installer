@@ -24,14 +24,13 @@ first member). Many TWRP builds have no `unzip`, and 2.5 GB could not be unpacke
 so TWRP's own zip reader opens it.
 
 How it boots:
-1. The S-Boot boot loader starts Silicium's UEFI, then Scion's loader, then the XNU kernel on the A55 cores 2 and 3
-   (`cpus=2 bootcpu=2`, the installer's default; S-Boot parks core 1). The loader stays on core 0 and reads the flash
-   for the kernel through the UEFI's UFS driver (`ufs=2`). Six cores (the four Exynos M3s as well) have been seen
-   running with `cpus=6 bootcpu=2 m3_prep=3 pan=0`. That is not the installer's default yet: see
-   [hakios-starlte's README, "The cores"](https://github.com/Scion-Project/hakios-starlte#the-cores).
+1. The S-Boot boot loader starts Silicium's UEFI, then Scion's loader, then the XNU kernel on six cores: the A55s 2
+   and 3 and the four Exynos M3s (`cpus=6 bootcpu=2 m3_prep=3 pan=0`; S-Boot parks core 1, the loader keeps core 0).
+   The kernel's own UFS driver takes the flash after a self-test against the loader's reads (`ufs=3`).
 2. The kernel starts from the small root inside the boot image.
-3. Its init mounts the system image from `/dev/ufs_SYSTEM`, makes it the root (`system_apfs=ufs_SYSTEM`), and goes on
-   as a RAM boot does: iOS's launchd, then SpringBoard.
+3. Its init mounts the system image from `/dev/ufs_SYSTEM`, makes it the root (`system_apfs=ufs_SYSTEM`), keeps
+   `/private/var` in USERDATA when that holds an HFS Plus volume (`ufs_write=1 var_hfs=ufs_USERDATA_data`; a memory
+   filesystem otherwise), and goes on as a RAM boot does: iOS's launchd, then SpringBoard.
 
 The system image is read from the flash, never loaded into memory: the S9 has 4 GB.
 
@@ -50,17 +49,18 @@ Then here:
 
 ```sh
 SCION_KERNEL=/path/to/hackios-xnu-kernel starlte/mkinstaller.sh -s /path/to/hackios-xnu-kernel/userland/system.apfs
-# -> out/scion-starlte-installer.zip; extra boot-args go at the end (e.g. mali=9, abox=8 max98512=3)
+# -> out/scion-starlte-installer.zip; extra boot-args go at the end, over the defaults (e.g. fps_log=1, or wifi= to drop one)
 ```
 
 `-p NAME` puts the system image on another partition, which must be at least as large as the image.
 
-The installer's default boot-arguments (`starlte/mkinstaller.sh`) turn on what has been seen working on the phone:
-touch (`s6sy761=1`), the battery and vibration (`max77705=1 max77705_haptic=1`), the USB log and console
-(`usb_gadget=5 max77705_usbsw=1`), the GPU (`mali=9`) and the A55s' clock (`cpufreq_lit=1794000`). They also set `panel=1`, `tmu=3` (the run ends
-at 110 °C) and `esslog=1` (the log kept for TWRP). Brightness from
-iOS's slider (`backlight=2`) and the cameras (`cam_s9=N`) are written but not yet confirmed or tested on the phone, and
-are not in the default.
+The boot-arguments are the S9's defaults: the kernel repository's `devices/starlte/configs/starlte.config`, which
+`devices/starlte/mkimage.sh` puts on every image (hakios-starlte's README, "Defaults"). They turn on everything seen
+working on the phone: six cores, the kernel's own UFS driver and a persistent `/private/var`, touch, keys, the battery
+and vibration, the USB log and console, the GPU and both governors, the brightness slider, zero-copy display, the RTC,
+the front camera, the speakers and Wi-Fi. The installer gives only `system_apfs=ufs_PARTITION`; extra boot-args given
+to it go over the defaults (`name=value` replaces one, `name=` drops it). Diagnostics (`fps_log`, `systrace`, the
+`*_probe` and `*_log` arguments) are never defaults.
 
 **Keep what you build to yourself.** The zip carries iOS's own files from your IPSW, and the loader carries your
 iPhone's identity. Do not publish it.
@@ -109,7 +109,8 @@ What the zip does in TWRP (`universal/update-binary`, a shell script):
    name, and by the block device they resolve to, before every write.
 
 The boot-arguments:
-- the S9's are `starlte/mkinstaller.sh`'s, read from that file, so the two installers never differ;
+- the S9's are its defaults, put on by the kernel repository's `devices/starlte/mkimage.sh` as for `starlte/mkinstaller.sh`,
+  so the two installers never differ; the zip records the whole line the image carries;
 - the S9+'s and the Note9's are `cpus=2 bootcpu=2 ufs=2 tmu=3 esslog=1 system_apfs=ufs_SYSTEM` (the SoC's, seen on the
   S9: two A55s, the flash through the loader, the thermal stop, the log kept for TWRP), with a 120 s time limit after
   which the run goes back to TWRP with its log. Touch, keys, battery, USB, GPU: add them one at a time with `-a`, as each
@@ -118,7 +119,7 @@ The boot-arguments:
 ### Build
 
 In the kernel repository, with the three device repositories synced (`tools/hakios-device.py sync starlte star2lte
-crownlte`; the S9+'s and the Note9's are private for now), one kernel per phone:
+crownlte`), one kernel per phone:
 
 ```sh
 make starlte_defconfig  && make kernel && cp hakios-kernel /tmp/k-starlte
@@ -143,8 +144,8 @@ nothing of Apple's or Samsung's. `SH="busybox sh"` runs update-binary under busy
 
 **The system image is never in this repository or in the zip's sources.** It is built from your own IPSW, as for the S9
 alone; the S9's CI job (hakios-starlte, `s9-installer`) downloads the IPSW from Apple's CDN at run time, builds it, and
-uploads only an encrypted archive. That job does not make the universal zip yet: it clones only hakios-starlte, and the
-S9+'s and the Note9's repositories are private, so it would need a token for them, two more kernels, and this script in
-place of `starlte/mkinstaller.sh`.
+uploads only an encrypted archive. That job does not make the universal zip yet: it clones only hakios-starlte, and it
+would need the S9+'s and the Note9's repositories (public), two more kernels, and this script in place of
+`starlte/mkinstaller.sh`.
 
 The zip has no Zip64 (TWRP's reader): the system image and three boot images fit under 4 GiB with room to spare.
