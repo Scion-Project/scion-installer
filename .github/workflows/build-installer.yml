@@ -1,0 +1,116 @@
+# build-installer.sh, kept from rotting: the whole one-command build run end to end on every change, with nothing of
+# Apple's (--open: the placeholder loader, a stand-in system image, the open small root), and the installers' self-test.
+#
+# Nothing of Apple's is fetched or made here: no IPSW, no keys. The real build (your own IPSW) is the same script with
+# --ipsw instead of --open; README.md, "Build it in one command".
+name: build-installer
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      kernel_ref:
+        description: Scion-Project/hackios-xnu-kernel commit or branch (empty for the one build-installer.sh pins)
+        default: ""
+  schedule:
+    - cron: "17 4 * * 1"     # Mondays: the pinned revision, and the kernel repository's main (is the pin falling behind?)
+
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Packages
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends busybox hfsprogs shellcheck 7zip clang lld meson ninja-build llvm \
+            flex bison m4 autoconf automake libtool-bin uuid-dev pkg-config python3-venv
+      - name: shellcheck
+        run: shellcheck -S warning build-installer.sh
+      - name: The universal installer against a pretend TWRP (universal/selftest.sh, bash and busybox sh)
+        run: |
+          universal/selftest.sh
+          SH="busybox sh" universal/selftest.sh
+      - name: The same with -U (USERDATA formatted; tools/mkdatavol.py from the kernel repository)
+        run: |
+          git clone -q --depth 1 https://github.com/Scion-Project/hackios-xnu-kernel.git /tmp/k
+          SCION_KERNEL=/tmp/k universal/selftest.sh -U
+      - name: build-installer.sh refuses what is not the 20F66 IPSW, and downloads none
+        run: |
+          set -u
+          sudo mkdir -p /mnt/t && sudo chown "$(id -u)" /mnt/t && cd /mnt/t
+          S=$GITHUB_WORKSPACE/build-installer.sh
+          expect() { # PATTERN CMD...: CMD fails, saying PATTERN
+            if "${@:2}" > out.txt 2>&1; then cat out.txt; echo "::error::succeeded: ${*:2}"; exit 1; fi
+            grep -q -- "$1" out.txt || { cat out.txt; echo "::error::no '$1' from: ${*:2}"; exit 1; }
+            echo "ok: ${*:2} -> $(grep -m1 -- "$1" out.txt)"
+          }
+          expect "nothing here downloads it" "$S"
+          expect "no such file" "$S" --ipsw /nonexistent.ipsw
+          expect "starlte (S9), star2lte (S9+), crownlte (Note9) or all" "$S" --ipsw /dev/null --device s10
+          expect "blocks, a number" "$S" --ipsw /dev/null --format-userdata 64G
+          expect "not among the phones built" "$S" --ipsw /dev/null --device starlte --format-userdata crownlte=13615227
+          head -c 1000 /dev/urandom > small.ipsw
+          expect "1000 bytes, not 6165698198" "$S" --ipsw small.ipsw --work /mnt/t/w
+          truncate -s 6165698198 fake.ipsw
+          expect "not an IPSW" "$S" --ipsw fake.ipsw --work /mnt/t/w
+          # and the script fetches no IPSW from anywhere: no Apple CDN, no ipsw.me
+          ! grep -nE 'cdn-apple|apple\.com|ipsw\.me|appldnld' "$S"
+
+  open-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        kernel: ${{ fromJSON(github.event_name == 'schedule' && '["pinned", "main"]' || '["pinned"]') }}
+    env:
+      W: /mnt/w
+    steps:
+      - uses: actions/checkout@v4
+      - name: Work space on /mnt (about 14 GB free on /, 70 GB there)
+        run: sudo mkdir -p "$W" && sudo chown -R "$(id -u):$(id -g)" "$W" && df -h / /mnt
+      - name: Packages (what build-installer.sh's check asks for on Linux)
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends build-essential git curl clang lld python3 python3-venv \
+            perl xz-utils flex bison m4 autoconf automake libtool-bin uuid-dev llvm meson ninja-build pkg-config 7zip
+      - name: Cache theos (its Linux toolchain and iPhoneOS16.5.sdk; build-installer.sh makes them when absent)
+        uses: actions/cache@v4
+        with:
+          path: /mnt/w/theos
+          key: theos-iOSToolchain-x86_64-iPhoneOS16.5-v1
+      - name: build-installer.sh --open --device all
+        env:
+          KREF: ${{ (matrix.kernel == 'main' && 'main') || inputs.kernel_ref }}
+        run: |
+          ./build-installer.sh --open --device all --work "$W" --out "$W/out" ${KREF:+--kernel-ref "$KREF"}
+      - name: The zip is what the universal installer makes, and its .sha256 is right
+        run: |
+          cd "$W/out"
+          sha256sum -c scion-exynos9810-installer.zip.sha256
+          python3 - scion-exynos9810-installer.zip <<'PY'
+          import sys, zipfile
+          z = zipfile.ZipFile(sys.argv[1])
+          names = [i.filename for i in z.infolist()]
+          print("\n".join("%10d %s" % (i.file_size, i.filename) for i in z.infolist()))
+          want = ["scion/installer.prop", "META-INF/com/google/android/update-binary", "META-INF/com/google/android/updater-script",
+                  "boot_starlte.img", "boot_star2lte.img", "boot_crownlte.img", "system.apfs"]
+          assert names[0] == "scion/installer.prop", names
+          assert sorted(names) == sorted(want), names
+          assert all(i.compress_type == zipfile.ZIP_STORED for i in z.infolist())
+          prop = z.read("scion/installer.prop").decode()
+          assert 'DEVICES="starlte star2lte crownlte"' in prop, prop
+          for d in ("starlte", "star2lte", "crownlte"):
+              assert z.getinfo("boot_%s.img" % d).file_size > 4 << 20, d
+          PY
+      - name: Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-installer-open-logs-${{ matrix.kernel }}
+          path: /mnt/w/logs
+          retention-days: 7
+          if-no-files-found: ignore
