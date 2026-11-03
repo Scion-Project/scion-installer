@@ -47,8 +47,10 @@ ZIPNAME=scion-exynos9810-installer$(if [ "$FORMAT" = 1 ]; then echo -format-user
 "$HERE/mkinstaller.sh" -K "$K" -s "$T/system.apfs" -k starlte="$T/kernel-starlte" -k star2lte="$T/kernel-star2lte" \
 	-k crownlte="$T/kernel-crownlte" -a crownlte="usb_gadget=5" -o "$T/$ZIPNAME" \
 	$(if [ "$FORMAT" = 1 ]; then echo "-U -u star2lte=$UBLOCKS"; fi) > "$T/make.log" 2>&1 || { cat "$T/make.log"; fail "mkinstaller.sh"; }
-grep -q 'starlte: boot-args system_apfs=ufs_SYSTEM (over the S9 defaults)' "$T/make.log" || fail "the S9's boot-args are not its defaults and the partition: $(grep starlte: "$T/make.log")"
-grep -q '  mkimage.sh: boot-args: cpus=6 bootcpu=2 ufs=3 system_apfs=ufs_SYSTEM' "$T/make.log" || fail "the S9's image does not carry its defaults"
+# (-U adds ufs_write=1 var_hfs=ufs_USERDATA_data, which the S9's defaults hold already)
+UVAR=; [ "$FORMAT" = 0 ] || UVAR="ufs_write=1 var_hfs=ufs_USERDATA_data "
+grep -qF "starlte: boot-args ${UVAR}system_apfs=ufs_SYSTEM (over the S9 defaults)" "$T/make.log" || fail "the S9's boot-args are not its defaults and the partition: $(grep starlte: "$T/make.log")"
+grep -qF "  mkimage.sh: boot-args: cpus=6 bootcpu=2 ufs=3 ${UVAR}system_apfs=ufs_SYSTEM" "$T/make.log" || fail "the S9's image does not carry its defaults"
 grep -q 'crownlte: boot-args cpus=2 bootcpu=2 ufs=2 tmu=3 esslog=1 .*system_apfs=ufs_SYSTEM usb_gadget=5' "$T/make.log" ||
 	fail "the Note9's boot-args: $(grep crownlte: "$T/make.log")"
 unzip -tq "$T/$ZIPNAME" > /dev/null 2>&1 || python3 -c "import zipfile,sys; z=zipfile.ZipFile(sys.argv[1]); assert z.testzip() is None" "$T/$ZIPNAME" ||
