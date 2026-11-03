@@ -15,7 +15,7 @@
 #   -K  the kernel repository, with devices/starlte (and devices/star2lte, devices/crownlte for those) synced; default
 #       $SCION_KERNEL, else ../hackios-xnu-kernel beside this repository
 #   -r  the small root (ALONE=1 RC=rc.launchd), the same for every phone; default the kernel repo's userland/root.apfs
-#   -a  more boot-arguments for one phone only (repeatable), after its defaults
+#   -a  more boot-arguments for one phone only (repeatable), over its defaults
 #   -p  the partition the system image goes to (SYSTEM)
 #   -t  a test run's seconds, after which the loader keeps the log and restarts into TWRP. Default: 0 (no limit) on the S9,
 #       120 on the S9+ and the Note9, which nobody has run this on
@@ -85,9 +85,10 @@ elif [ -n "$UBLOCKS_starlte$UBLOCKS_star2lte$UBLOCKS_crownlte" ]; then
 	echo "mkinstaller.sh: -u without -U: USERDATA is only formatted by a zip made with -U" >&2; exit 2
 fi
 
-# The S9's default boot-arguments are starlte/mkinstaller.sh's, taken from it so that the two never differ.
-S9_ARGS=$(sed -n 's/^ARGS="\(.*\) system_apfs=ufs_\$PART \$\*"$/\1/p' "$HERE/../starlte/mkinstaller.sh")
-[ -n "$S9_ARGS" ] || { echo "mkinstaller.sh: starlte/mkinstaller.sh's ARGS line is not where it was" >&2; exit 1; }
+# The S9's boot-arguments are its defaults, which devices/starlte/mkimage.sh puts on every image (the kernel repository's
+# devices/starlte/configs/starlte.config; README.md there, "Defaults"), as for starlte/mkinstaller.sh: nothing is given
+# for it here but the system image's partition and -a's.
+S9_ARGS=
 # The S9+ and the Note9: what is the SoC's and was seen on the S9 with nothing of the board's: the two A55s, the flash
 # through the loader, the thermal stop, the log kept for TWRP. No driver of the board's (touch, keys, battery, USB,
 # GPU) until someone has seen it on that phone: add them with -a, one at a time (devices/<name>/README.md, "First runs").
@@ -110,15 +111,22 @@ for dev in starlte star2lte crownlte; do
 	k=$(abs "$(get KERNEL $dev)")
 	[ -f "$k" ] || { echo "mkinstaller.sh: $dev's kernel $k is missing" >&2; exit 1; }
 	[ -x "$KREPO/devices/$dev/mkimage.sh" ] || { echo "mkinstaller.sh: $KREPO/devices/$dev is not synced (tools/hakios-device.py sync $dev)" >&2; exit 1; }
+	[ "$dev" != starlte ] || grep -q -- '--with' "$KREPO/devices/starlte/mkimage.sh" || {
+		echo "mkinstaller.sh: $KREPO/devices/starlte is older than the S9's defaults: tools/hakios-device.py sync starlte" >&2; exit 1; }
 	if [ "$dev" = starlte ]; then
 		args="$S9_ARGS" secs=${SECS:-0} borrow=
 	else
 		args="$UNSEEN_ARGS" secs=${SECS:-120} borrow=-U   # the S9's UEFI: devices/<name>/README.md, "The UEFI"
 	fi
+	# (the S9's defaults already keep /private/var in USERDATA: said again, it changes nothing there)
 	[ "$FORMAT" = 1 ] && args="$args ufs_write=1 var_hfs=ufs_USERDATA_data"
-	args="$args system_apfs=ufs_$PART$(get EXTRA $dev) $*"
-	echo "mkinstaller.sh: $dev: boot-args $args"
-	"$KREPO/devices/$dev/mkimage.sh" $borrow $QUIET -o "$WORK/boot_$dev.img" -k "$k" -r "$ROOT" -s "$secs" $args | sed 's/^/  /'
+	args=$(echo $args system_apfs=ufs_$PART$(get EXTRA $dev) $*)
+	echo "mkinstaller.sh: $dev: boot-args $args$([ "$dev" != starlte ] || echo ' (over the S9 defaults)')"
+	made=$("$KREPO/devices/$dev/mkimage.sh" $borrow $QUIET -o "$WORK/boot_$dev.img" -k "$k" -r "$ROOT" -s "$secs" $args)
+	echo "$made" | sed 's/^/  /'
+	# what the image carries, as its mkimage.sh said it (the S9's: its defaults with these over them)
+	effective=$(echo "$made" | sed -n 's/^mkimage.sh: boot-args: \(.*\); [^;]*$/\1/p')
+	args=${effective:-$args}
 	key=$(echo "$dev" | tr a-z A-Z)
 	MEMBERS+=("boot_$dev.img=$WORK/boot_$dev.img")
 	PROP+="BOOT_${key}_OFF=@BOOT_${key}_OFF@
