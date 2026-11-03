@@ -119,7 +119,7 @@ The boot-arguments:
 ### Build
 
 In the kernel repository, with the three device repositories synced (`tools/hakios-device.py sync starlte star2lte
-crownlte`; the S9+'s and the Note9's are private for now), one kernel per phone:
+crownlte`), one kernel per phone:
 
 ```sh
 make starlte_defconfig  && make kernel && cp hakios-kernel /tmp/k-starlte
@@ -144,8 +144,8 @@ nothing of Apple's or Samsung's. `SH="busybox sh"` runs update-binary under busy
 
 **The system image is never in this repository or in the zip's sources.** It is built from your own IPSW, as for the S9
 alone; the S9's CI job (hakios-starlte, `s9-installer`) downloads the IPSW from Apple's CDN at run time, builds it, and
-uploads only an encrypted archive. That job does not make the universal zip yet: it clones only hakios-starlte, and the
-S9+'s and the Note9's repositories are private, so it would need a token for them, two more kernels, and this script in
-place of `starlte/mkinstaller.sh`.
+uploads only an encrypted archive. That job does not make the universal zip yet: it clones only hakios-starlte, and it
+would need the S9+'s and the Note9's repositories (public), two more kernels, and this script in place of
+`starlte/mkinstaller.sh`.
 
 The zip has no Zip64 (TWRP's reader): the system image and three boot images fit under 4 GiB with room to spare.
