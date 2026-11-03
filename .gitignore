@@ -3,3 +3,4 @@
 *.img
 *.apfs
 out/
+scion-build/
