@@ -14,7 +14,8 @@
 #                           LOST). SIZE is USERDATA's size in 4096-byte blocks (in TWRP:
 #                           echo $(( $(blockdev --getsize64 /dev/block/by-name/USERDATA) / 4096 ))), for every phone
 #                           built, or DEVICE=SIZE for one. Repeatable.
-#   --work DIR              where the sources and the build go (./scion-build). About 45 GB while it runs.
+#   --work DIR              where the sources and the build go (./scion-build): about 10 GB, 15 at the most while it
+#                           runs; 20 GB free is asked for, besides the IPSW
 #   --out DIR               where the zip and its .sha256 go (./out)
 #   --kernel-ref REF        the kernel repository's commit (default: the one pinned below, which the device
 #                           repositories are pinned against in its devices/manifest.conf)
@@ -176,7 +177,7 @@ if [ ${#UARGS[@]} -gt 0 ]; then
 	else have mkfs.hfsplus || missing "mkfs.hfsplus (--format-userdata)" "sudo apt-get install hfsprogs"; fi
 fi
 # disk: the sources and the build (kernel trees, Mesa, the unpacked IPSW, the images) and the zip
-need_gb=$([ "$OPEN" = 1 ] && echo 15 || echo 45)
+need_gb=$([ "$OPEN" = 1 ] && echo 8 || echo 20)
 mkdir -p "$WORK" "$OUTDIR"
 free_gb=$(df -Pk "$WORK" | awk 'NR == 2 { print int($4 / 1048576) }')
 used_gb=$(du -sk "$WORK" 2>/dev/null | awk '{ print int($1 / 1048576) }')
@@ -295,7 +296,7 @@ run() { # LOG CMD...: the command's output to its log; its tail on failure
 
 # --- the IPSW unpacked, the loader's identity ------------------------------------------------------------------------
 if [ "$OPEN" = 0 ]; then
-	step "Unpacking your IPSW (sysimage/unpack.sh; 10 to 30 minutes the first time)"
+	step "Unpacking your IPSW (sysimage/unpack.sh; a few minutes the first time)"
 	# unpack.sh finds 7z by that name
 	if [ "$SEVENZ" = 7zz ] && ! have 7z; then mkdir -p "$WORK/bin" && ln -sf "$(command -v 7zz)" "$WORK/bin/7z" && export PATH="$WORK/bin:$PATH"; fi
 	# (a second run finds what it unpacked before and does not read the IPSW again for it)
@@ -329,7 +330,7 @@ echo "  xnuloader/loader.efi: $(wc -c < xnuloader/loader.efi | tr -d ' ') bytes"
 
 # --- the small root and the system image ------------------------------------------------------------------------------
 if [ "$OPEN" = 0 ]; then
-	step "The small root and the iOS system image (userland/build.sh, with Mesa the first time: 20 to 60 minutes)"
+	step "The small root and the iOS system image (userland/build.sh, with Mesa the first time: 10 to 30 minutes)"
 	if ! BISON3=$BISON3 bash -c 'source ./xnu-env.sh && export PATH="$BISON3:$PATH" && cd userland && GL=1 NO_AIR=1 REST=1 ALONE=1 RC=rc.launchd bash build.sh' > "$LOGS/userland.log" 2>&1; then
 		tail -40 "$LOGS/userland.log" >&2
 		M=xnu-deps/build/mesa
