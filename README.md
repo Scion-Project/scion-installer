@@ -49,8 +49,8 @@ What it takes:
 |---|---|---|
 | Tools | Xcode or its command-line tools (`xcode-select --install`), and `brew install sevenzip lld llvm bison meson ninja` | `sudo apt-get install build-essential git curl clang lld python3 python3-venv perl xz-utils flex bison m4 autoconf automake libtool-bin uuid-dev llvm meson ninja-build pkg-config 7zip` (Ubuntu 24.04; 7-Zip must be 23 or newer) |
 | The iOS SDK the kernel is built against | fetched by `xnu-deps/setup.sh` | theos's Linux toolchain and `iPhoneOS16.5.sdk`, from `$THEOS` or `~/theos` when they are there, otherwise fetched into `scion-build/theos` |
-| Disk | about 45 GB free | the same |
-| Time, first run | @MACTIME@ | not yet timed on a desk machine; the CI job below runs the whole `--open` build on Linux |
+| Disk | 20 GB free besides the IPSW: `scion-build` ends at about 10 GB (15 at most while it runs), the zip is 2.4 GB | the same, plus 1.5 GB for theos |
+| Time, first run | 20 minutes on a Mac mini M1 that other builds were also using: about 1 to unpack, 5 for the kernel and its dependencies, 8 for Mesa, 4 for the images | not timed with an IPSW yet; the `--open` build (no Mesa, no system image) takes 6 minutes on GitHub's runners |
 
 `--format-userdata` also needs `newfs_hfs` (part of macOS) or `mkfs.hfsplus` (Linux: `hfsprogs`).
 
@@ -79,9 +79,10 @@ the script refuses anything but the 20F66 IPSW. The zip that comes out installs,
     meson, ninja, `llvm-ar` (`brew install llvm`, Linux: `llvm`) and bison 3. macOS's `/usr/bin/bison` is 2.3
     (`invalid directive: '%code'`). The script finds Homebrew's keg-only bison by itself and uses it for this step only.
   - `unpack.log`: usually 7-Zip older than 23, or the disk filling up.
-- **Disk**: the IPSW itself is 6.2 GB. The unpacked IPSW takes 5.3 GB, the kernel tree and its dependencies about 10 GB,
-  Mesa about 2 GB, the images and the zip about 6 GB. Once the zip is made you can delete `scion-build`, but the next
-  build will then start from nothing.
+- **Disk**: the IPSW itself is 6.2 GB. In `scion-build`, measured on a Mac: the unpacked IPSW 5.7 GB, the images
+  2.4 GB, XNU's tree 0.6 GB, its dependencies and Mesa 0.8 GB. While it unpacks, the IPSW's 4.7 GB root filesystem image
+  is also there for a while. The zip is 2.4 GB. Once the zip is made you can delete `scion-build`, but the next build
+  then starts from nothing.
 - **Linux**: the script runs on x86_64 with theos's toolchain. CI runs it on Ubuntu 24.04, so that path is tested
   without an IPSW. The real build on Linux is the same as the one the S9's CI job runs (hakios-starlte,
   `s9-installer`), but nobody has timed it on a desk machine yet. arm64 Linux has no theos toolchain here.
