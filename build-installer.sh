@@ -381,7 +381,7 @@ if [ "$OPEN" = 0 ]; then
 		rm -f userland/system.apfs
 	fi
 	step "The small root and the iOS system image (userland/build.sh, with Mesa the first time: 10 to 30 minutes)"
-	if ! env ${S9_USERLAND[@]+"${S9_USERLAND[@]}"} JB_KEPT_ONLY=$([ "$SILEO" = 1 ] && echo 1) BISON3="$BISON3" bash -c 'source ./xnu-env.sh && export PATH="$BISON3:$PATH" && cd userland && GL=1 NO_AIR=1 REST=1 ALONE=1 RC=rc.launchd bash build.sh' > "$LOGS/userland.log" 2>&1; then
+	if ! env ${S9_USERLAND[@]+"${S9_USERLAND[@]}"} "JB_KEPT_ONLY=$([ "$SILEO" = 1 ] && echo 1)" BISON3="$BISON3" bash -c 'source ./xnu-env.sh && export PATH="$BISON3:$PATH" && cd userland && GL=1 NO_AIR=1 REST=1 ALONE=1 RC=rc.launchd bash build.sh' > "$LOGS/userland.log" 2>&1; then
 		tail -40 "$LOGS/userland.log" >&2
 		M=xnu-deps/build/mesa
 		for f in $M/meson-setup.log $M/ninja.log; do
