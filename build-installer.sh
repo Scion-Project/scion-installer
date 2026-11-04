@@ -2,14 +2,12 @@
 # build-installer.sh: a Scion installer for the Galaxy S9, S9+ and Note9, made in one command from your own IPSW.
 #
 #   ./build-installer.sh --ipsw /path/to/iPhone10,3,iPhone10,6_16.5_20F66_Restore.ipsw
-#   ./build-installer.sh --ipsw IPSW --device all
-#   ./build-installer.sh --ipsw IPSW --device starlte --format-userdata 13615227
+#   ./build-installer.sh --ipsw IPSW --format-userdata starlte=13615227
 #
 #   --ipsw PATH             your own iOS 16.5 (20F66) IPSW for iPhone10,3 / iPhone10,6, 6 165 698 198 bytes. It is
 #                           checked (size, BuildManifest, SHA-256) before anything else. Nothing here downloads it.
-#   --device NAME           starlte (Galaxy S9, the default), star2lte (S9+), crownlte (Note9), all, or a list
-#                           (starlte,crownlte). starlte alone makes starlte/mkinstaller.sh's zip; anything else, or
-#                           --format-userdata, makes universal/mkinstaller.sh's.
+#   --device NAME           all (the default: the Galaxy S9, S9+ and Note9 in one zip), or starlte, star2lte, crownlte
+#                           or a list (starlte,crownlte) for a zip of fewer. The zip is universal/mkinstaller.sh's.
 #   --format-userdata SIZE  the zip also formats USERDATA as HFS Plus for a persistent /private/var (ANDROID'S DATA IS
 #                           LOST). SIZE is USERDATA's size in 4096-byte blocks (in TWRP: blockdev --getsize64
 #                           /dev/block/by-name/USERDATA | awk '{ printf "%.0f\n", $1 / 4096 }'), for every phone built,
@@ -21,6 +19,8 @@
 #                           repositories are pinned against in its devices/manifest.conf)
 #   --jobs N                parallel jobs for the kernels (default: the number of CPUs)
 #   --skip-hash             skip the IPSW's SHA-256 (the size and the BuildManifest are still checked)
+#   --no-sileo              leave Sileo and the Procursus bootstrap out of the system image (they are fetched from
+#                           their public releases, pinned by SHA-256, by the kernel repository's tools/mk-jb.sh)
 #   --open                  no IPSW at all: the placeholder loader (no Apple data), a stand-in system image and the
 #                           open small root. The zip installs, but iOS does not start: what CI runs.
 #   -- ARGS...              extra boot-arguments, over the defaults (as for the mkinstaller.sh scripts)
@@ -46,7 +46,7 @@ IPSW_SHA256=c1091c401f67e3aa7cdfeb2cc19e6c79be3c957aae4e097a019e9ccea07d52f2
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 START=$(date +%s)
-IPSW='' DEVICES=starlte WORK=$PWD/scion-build OUTDIR=$PWD/out JOBS='' SKIP_HASH=0 OPEN=0 KREF=$KERNEL_REV
+IPSW='' DEVICES=all SILEO=1 WORK=$PWD/scion-build OUTDIR=$PWD/out JOBS='' SKIP_HASH=0 OPEN=0 KREF=$KERNEL_REV
 UBLOCKS=()
 EXTRA=()
 
@@ -73,6 +73,7 @@ while [ $# -gt 0 ]; do
 	--jobs) JOBS=${2:?--jobs N}; shift 2 ;;
 	--jobs=*) JOBS=${1#*=}; shift ;;
 	--skip-hash) SKIP_HASH=1; shift ;;
+	--no-sileo) SILEO=0; shift ;;
 	--open) OPEN=1; shift ;;
 	-h | --help) usage; exit 0 ;;
 	--) shift; EXTRA=("$@"); break ;;
@@ -102,7 +103,6 @@ for u in ${UBLOCKS[@]+"${UBLOCKS[@]}"}; do
 	[ "$n" -ge 262144 ] || die "--format-userdata $u: $n blocks is under 1 GiB; that is not a phone's USERDATA (it is counted in 4096-byte blocks)"
 	for d in $targets; do UARGS+=(-u "$d=$n"); done
 done
-if [ "$DEVLIST" = starlte ] && [ ${#UARGS[@]} = 0 ]; then KIND=starlte; else KIND=universal; fi
 JOBS=${JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)}
 case "$JOBS" in '' | *[!0-9]*) die "--jobs $JOBS: a number" ;; esac
 if [ "$OPEN" = 1 ]; then
@@ -165,6 +165,11 @@ if [ "$OPEN" = 0 ] && [ -z "$SEVENZ" ]; then
 fi
 have lld-link || missing "lld-link (the loader, an EFI application)" "$([ "$HOST" = macos ] && echo "brew install lld" || echo "sudo apt-get install lld")"
 if [ "$OPEN" = 0 ]; then   # Mesa, for the S9's GPU (GL=1)
+	# Sileo and the Procursus bootstrap (the kernel repository's tools/mk-jb.sh)
+	if [ "$SILEO" = 1 ]; then
+		have zstd || missing "zstd (the Procursus bootstrap; or --no-sileo)" "$B zstd"
+		have ar || missing "ar (Sileo's package; or --no-sileo)" "$B binutils"
+	fi
 	have meson || missing "meson (Mesa, the S9's OpenGL ES)" "$B meson"
 	have ninja || missing "ninja (Mesa)" "$B $([ "$HOST" = macos ] && echo ninja || echo ninja-build)"
 	have llvm-ar || missing "llvm-ar (Mesa)" "$B llvm"
@@ -201,7 +206,7 @@ if [ ${#PROBLEMS[@]} -gt 0 ]; then
 	exit 1
 fi
 echo "build-installer: $HOST, $JOBS jobs, ${SEVENZ:-no 7-Zip (--open)}, $free_gb GB free at $WORK"
-echo "build-installer: for $DEVLIST -> $KIND zip$([ ${#UARGS[@]} = 0 ] || echo ", formats USERDATA (${UARGS[*]})")"
+echo "build-installer: for $DEVLIST$([ ${#UARGS[@]} = 0 ] || echo ", formats USERDATA (${UARGS[*]})")"
 
 # --- the IPSW: the one build this is made for ---------------------------------------------------------------------------
 if [ "$OPEN" = 0 ]; then
@@ -363,8 +368,20 @@ echo "  xnuloader/loader.efi: $(wc -c < xnuloader/loader.efi | tr -d ' ') bytes"
 
 # --- the small root and the system image ------------------------------------------------------------------------------
 if [ "$OPEN" = 0 ]; then
+	# Sileo and Procursus's bootstrap, from their public releases, never committed: into jb/, whence userland/build.sh
+	# puts them in the system image as /jb. JB_KEPT_ONLY: a job copies them once to a kept /private/var at the first boot;
+	# on a /private/var in memory (no --format-userdata, the S9+ and the Note9 so far) the phone boots as if they were not
+	# there, and shows no icon for them. Bootstrap and Sileo alone: no tweak injection, no OpenSSH.
+	if [ "$SILEO" = 1 ]; then
+		step "Sileo and the Procursus bootstrap (tools/mk-jb.sh)"
+		# (should a release go away or change from its pin, this stops here: --no-sileo builds without them)
+		run mk-jb.log env PREINSTALL= ELLEKIT= tools/mk-jb.sh
+	elif [ -d jb ]; then
+		rm -rf jb
+		rm -f userland/system.apfs
+	fi
 	step "The small root and the iOS system image (userland/build.sh, with Mesa the first time: 10 to 30 minutes)"
-	if ! env ${S9_USERLAND[@]+"${S9_USERLAND[@]}"} BISON3="$BISON3" bash -c 'source ./xnu-env.sh && export PATH="$BISON3:$PATH" && cd userland && GL=1 NO_AIR=1 REST=1 ALONE=1 RC=rc.launchd bash build.sh' > "$LOGS/userland.log" 2>&1; then
+	if ! env ${S9_USERLAND[@]+"${S9_USERLAND[@]}"} JB_KEPT_ONLY=$([ "$SILEO" = 1 ] && echo 1) BISON3="$BISON3" bash -c 'source ./xnu-env.sh && export PATH="$BISON3:$PATH" && cd userland && GL=1 NO_AIR=1 REST=1 ALONE=1 RC=rc.launchd bash build.sh' > "$LOGS/userland.log" 2>&1; then
 		tail -40 "$LOGS/userland.log" >&2
 		M=xnu-deps/build/mesa
 		for f in $M/meson-setup.log $M/ninja.log; do
@@ -387,24 +404,18 @@ for f in "$ROOT" "$SYSTEM"; do [ -f "$f" ] || die "userland/build.sh left no $f 
 echo "  root.apfs $(wc -c < "$ROOT" | tr -d ' ') bytes, system.apfs $(( $(wc -c < "$SYSTEM") / 1048576 )) MB"
 
 # --- the installer ------------------------------------------------------------------------------------------------------
-step "The installer ($KIND/mkinstaller.sh)"
+step "The installer (universal/mkinstaller.sh)"
 MKFAIL=
-if [ "$KIND" = starlte ]; then
-	ZIP=$OUTDIR/scion-starlte-installer.zip
-	SCION_KERNEL=$KREPO "$HERE/starlte/mkinstaller.sh" -K "$KREPO" -s "$SYSTEM" -k "$KDIR/kernel-starlte" -r "$ROOT" \
-		-o "$ZIP" $S9_ARGS ${EXTRA[@]+"${EXTRA[@]}"} > "$LOGS/mkinstaller.log" 2>&1 || MKFAIL=1
-else
-	ZIP=$OUTDIR/scion-exynos9810-installer$([ ${#UARGS[@]} = 0 ] || echo -format-userdata).zip
-	KARGS=()
-	for d in $DEVLIST; do KARGS+=(-k "$d=$KDIR/kernel-$d"); done
-	[ ${#UARGS[@]} = 0 ] || KARGS+=(-U "${UARGS[@]}")
-	[ -z "$S9_ARGS" ] || KARGS+=(-a "starlte=$S9_ARGS")
-	MKFSV=; [ "$HOST" = macos ] && MKFSV=newfs_hfs
-	MKFS=${MKFS:-${MKFSV:-mkfs.hfsplus}} SCION_KERNEL=$KREPO "$HERE/universal/mkinstaller.sh" -K "$KREPO" -s "$SYSTEM" "${KARGS[@]}" -r "$ROOT" \
-		-o "$ZIP" ${EXTRA[@]+"${EXTRA[@]}"} > "$LOGS/mkinstaller.log" 2>&1 || MKFAIL=1
-fi
+ZIP=$OUTDIR/scion-exynos9810-installer$([ ${#UARGS[@]} = 0 ] || echo -format-userdata).zip
+KARGS=()
+for d in $DEVLIST; do KARGS+=(-k "$d=$KDIR/kernel-$d"); done
+[ ${#UARGS[@]} = 0 ] || KARGS+=(-U "${UARGS[@]}")
+[ -z "$S9_ARGS" ] || KARGS+=(-a "starlte=$S9_ARGS")
+MKFSV=; [ "$HOST" = macos ] && MKFSV=newfs_hfs
+MKFS=${MKFS:-${MKFSV:-mkfs.hfsplus}} SCION_KERNEL=$KREPO "$HERE/universal/mkinstaller.sh" -K "$KREPO" -s "$SYSTEM" "${KARGS[@]}" -r "$ROOT" \
+	-o "$ZIP" ${EXTRA[@]+"${EXTRA[@]}"} > "$LOGS/mkinstaller.log" 2>&1 || MKFAIL=1
 sed 's/^/  /' "$LOGS/mkinstaller.log"
-[ -z "$MKFAIL" ] && [ -f "$ZIP" ] || die "$KIND/mkinstaller.sh failed (the log: $LOGS/mkinstaller.log)"
+[ -z "$MKFAIL" ] && [ -f "$ZIP" ] || die "universal/mkinstaller.sh failed (the log: $LOGS/mkinstaller.log)"
 SUM=$(python3 -c '
 import hashlib, sys
 h = hashlib.sha256()
@@ -414,7 +425,7 @@ with open(sys.argv[1], "rb") as f:
 print(h.hexdigest())' "$ZIP")
 echo "$SUM  $(basename "$ZIP")" > "$ZIP.sha256"
 # what to tell whoever is handed the zip
-[ "$KIND" = starlte ] || [ ${#UARGS[@]} -gt 0 ] || cp "$HERE/universal/TESTING.txt" "$OUTDIR/TESTING.txt"
+[ ${#UARGS[@]} -gt 0 ] || cp "$HERE/universal/TESTING.txt" "$OUTDIR/TESTING.txt"
 
 cat <<EOF
 
