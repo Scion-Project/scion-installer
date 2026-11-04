@@ -26,7 +26,7 @@
 #       the boot images get ufs_write=1 var_hfs=ufs_USERDATA_data. Needs -u for every size it should handle, and in
 #       TWRP it runs only when the zip's file name still contains "format-userdata" (the default -o name does)
 #   -u  DEVICE=BLOCKS: a USERDATA of BLOCKS blocks of 4096 on that phone (TWRP: blockdev --getsize64
-#       /dev/block/by-name/USERDATA, divided by 4096). The volume is made here (the kernel repo's tools/mkdatavol.py
+#       /dev/block/by-name/USERDATA | awk '{ printf "%.0f\n", $1 / 4096 }'; its shell's own arithmetic stops at 32 bits). The volume is made here (the kernel repo's tools/mkdatavol.py
 #       --userdata, with mkfs.hfsplus or macOS's newfs_hfs: MKFS=...); a phone whose USERDATA has another size is told
 #       the command to make its own and nothing is written. Repeatable: one per phone and storage size.
 #   -o  the zip (out/scion-exynos9810-installer.zip, or ...-format-userdata.zip with -U)
