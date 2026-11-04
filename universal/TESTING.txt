@@ -9,8 +9,9 @@ Needs: unlocked bootloader + TWRP. Battery above 50%.
 The installer works out which phone it is on, writes only SYSTEM and BOOT, verifies both, and refuses to touch
 EFS, the modem or recovery. This zip does not write to USERDATA, so your Android data stays there.
 
-What has been tested: this zip was installed for real on one Galaxy S9 (G960F), and booted, on the official TWRP.
-Not tested: any S9+ or Note9 (nobody has one here), and the steps below that say so.
+What has been tested: this zip was installed for real on one Galaxy S9 (G960F, official TWRP 3.7.0), and booted. Only
+SYSTEM and BOOT changed, and it ran 15 minutes of swiping with no crash of the display server.
+Not tested: any S9+ or Note9 (nobody here has one), a phone that still has Android's data, and anything marked below.
 
 What you get depends on the phone:
 
@@ -24,7 +25,10 @@ GALAXY S9 - the full system, like the daily image. It runs until you end it.
 
   /private/var on the S9, where iOS keeps your settings:
   - USERDATA holding Android's data, as on nearly every phone: /private/var lives in memory (about 1 GB) and is empty at
-    every boot. Settings, Wi-Fi networks, the passcode and anything you save are gone after a restart. @VAR_MEMORY@
+    every boot. Settings, Wi-Fi networks, the passcode and anything you save are gone after a restart.
+    Not yet seen on a phone with Android's data. It was tested on a test phone with the zip's kernel told to use a
+    partition that holds no HFS Plus: it fell back to memory, reached the home screen and ran 6 minutes. If yours
+    does not start, step 4 gets you back, and please send the log.
   - USERDATA already formatted HFS Plus, by the separate "format-userdata" installer (which erases Android's data; it is
     not this zip) or an earlier Scion: this zip uses that volume, and what is in it stays between restarts.
 
@@ -39,13 +43,13 @@ Steps
    (EFS holds your IMEI - do not skip it.)
 2. Put the zip where TWRP can read it, one of these. It is 2.6 GB. Do NOT use adb sideload: it cannot send a file over
    2 GB (the recovery gets a negative size, and nothing happens).
-   a. A microSD card: copy the zip to it on a computer. In TWRP: Install -> Select Storage -> Micro SDCard. (@SD@)
-   b. Internal storage, if TWRP shows it with 3 GB free: adb push scion-exynos9810-installer.zip /sdcard/ (@PUSH@)
+   a. A microSD card: copy the zip to it on a computer. In TWRP: Install -> Select Storage -> Micro SDCard. (Not tested.)
+   b. Internal storage, if TWRP shows it with 3 GB free: adb push scion-exynos9810-installer.zip /sdcard/ (Not tested.)
    c. Neither (TWRP cannot read your data, or USERDATA is not Android's): into memory, which goes at the next restart.
       adb shell mount -o remount,size=3G /tmp
       adb push scion-exynos9810-installer.zip /tmp/
       adb shell twrp install /tmp/scion-exynos9810-installer.zip
-      That is step 3 as well: watch for "Done" on the screen. This is the way that was tested.
+      That is step 3 as well: wait for "Done processing script file". This is the way that was tested.
    Optional: check it matches scion-exynos9810-installer.zip.sha256.
 3. TWRP -> Install -> pick the zip -> swipe.
 4. Reboot -> System.
