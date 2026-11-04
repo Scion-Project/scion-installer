@@ -32,6 +32,13 @@ GALAXY S9 - the full system, like the daily image. It runs until you end it.
   - USERDATA already formatted HFS Plus, by the separate "format-userdata" installer (which erases Android's data; it is
     not this zip) or an earlier Scion: this zip uses that volume, and what is in it stays between restarts.
 
+  Sileo (package manager), on the S9 with that HFS Plus volume only:
+  About 30 seconds after the first boot, iOS copies Sileo and its packages to /private/var/jb in the background. Then
+  its icon appears on the second home screen page, and what you install stays between restarts. With /private/var in
+  memory it does nothing: no copy and no icon. Sileo needs Wi-Fi, so join from Settings first.
+  Tested: the icon, opening it, and its installed list on one S9.
+  NOT tested: refreshing sources or installing a package. Nobody has done either on this layout yet; tell us what happens.
+
 S9+ and NOTE9 - a minimal first run. Nobody has booted Scion on these phones yet.
   It starts on 2 cores with almost no drivers, mounts iOS from SYSTEM and, after 120 seconds, returns to TWRP by
   itself, keeping a log. The screen may stay black or frozen during the run: that is expected. Touch, keys, Wi-Fi and
@@ -41,7 +48,7 @@ Steps
 -----
 1. In TWRP: Backup -> tick Boot, System and EFS -> swipe. Copy the TWRP folder to a computer.
    (EFS holds your IMEI - do not skip it.)
-2. Put the zip where TWRP can read it, one of these. It is 2.6 GB. Do NOT use adb sideload: it cannot send a file over
+2. Put the zip where TWRP can read it, one of these. It is 2.7 GB. Do NOT use adb sideload: it cannot send a file over
    2 GB (the recovery gets a negative size, and nothing happens).
    a. A microSD card: copy the zip to it on a computer. In TWRP: Install -> Select Storage -> Micro SDCard. (Not tested.)
    b. Internal storage, if TWRP shows it with 3 GB free: adb push scion-exynos9810-installer.zip /sdcard/ (Not tested.)
