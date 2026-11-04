@@ -33,7 +33,7 @@
 #
 # The zip carries iOS's own files, from your IPSW, and the loader carries your iPhone's identity: it is yours to hand on
 # privately, never to be published or committed (.gitignore keeps it out of this repository). Nothing of Apple's is in
-# this repository: the system image is built from your IPSW, as for starlte/mkinstaller.sh.
+# this repository: the system image is built from your IPSW.
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/.." && pwd)
@@ -86,7 +86,7 @@ elif [ -n "$UBLOCKS_starlte$UBLOCKS_star2lte$UBLOCKS_crownlte" ]; then
 fi
 
 # The S9's boot-arguments are its defaults, which devices/starlte/mkimage.sh puts on every image (the kernel repository's
-# devices/starlte/configs/starlte.config; README.md there, "Defaults"), as for starlte/mkinstaller.sh: nothing is given
+# devices/starlte/configs/starlte.config; README.md there, "Defaults"): nothing is given
 # for it here but the system image's partition and -a's.
 S9_ARGS=
 # The S9+ and the Note9: what is the SoC's and was seen on the S9 with nothing of the board's: the two A55s, the flash
