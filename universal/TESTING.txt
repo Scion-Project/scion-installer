@@ -48,7 +48,7 @@ Steps
 -----
 1. In TWRP: Backup -> tick Boot, System and EFS -> swipe. Copy the TWRP folder to a computer.
    (EFS holds your IMEI - do not skip it.)
-2. Put the zip where TWRP can read it, one of these. It is 2.7 GB. Do NOT use adb sideload: it cannot send a file over
+2. Put the zip where TWRP can read it, one of these. It is 2.6 GB. Do NOT use adb sideload: it cannot send a file over
    2 GB (the recovery gets a negative size, and nothing happens).
    a. A microSD card: copy the zip to it on a computer. In TWRP: Install -> Select Storage -> Micro SDCard. (Not tested.)
    b. Internal storage, if TWRP shows it with 3 GB free: adb push scion-exynos9810-installer.zip /sdcard/ (Not tested.)
