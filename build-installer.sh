@@ -11,9 +11,9 @@
 #                           (starlte,crownlte). starlte alone makes starlte/mkinstaller.sh's zip; anything else, or
 #                           --format-userdata, makes universal/mkinstaller.sh's.
 #   --format-userdata SIZE  the zip also formats USERDATA as HFS Plus for a persistent /private/var (ANDROID'S DATA IS
-#                           LOST). SIZE is USERDATA's size in 4096-byte blocks (in TWRP:
-#                           echo $(( $(blockdev --getsize64 /dev/block/by-name/USERDATA) / 4096 ))), for every phone
-#                           built, or DEVICE=SIZE for one. Repeatable.
+#                           LOST). SIZE is USERDATA's size in 4096-byte blocks (in TWRP: blockdev --getsize64
+#                           /dev/block/by-name/USERDATA | awk '{ printf "%.0f\n", $1 / 4096 }'), for every phone built,
+#                           or DEVICE=SIZE for one. Repeatable.
 #   --work DIR              where the sources and the build go (./scion-build): about 10 GB, 15 at the most while it
 #                           runs; 20 GB free is asked for, besides the IPSW
 #   --out DIR               where the zip and its .sha256 go (./out)
@@ -36,7 +36,7 @@ set -euo pipefail
 # The kernel repository's commit this script was last run against end to end. Its devices/manifest.conf pins the device
 # repositories (hakios-starlte, hakios-star2lte, hakios-crownlte); tools/hakios-device.py sync checks them out there.
 KERNEL_REPO=https://github.com/Scion-Project/hackios-xnu-kernel.git
-KERNEL_REV=5ef238ba7109a7a2e48fc0b2654b5740cddacdb8
+KERNEL_REV=b699d2fc3535a40a5d467473c2ee96f2a1c8dee4
 
 # The one IPSW the build is made for (sysimage/unpack.sh and select-system.py know only this one). These are facts
 # about Apple's file, published with it; the file itself is never fetched here.
@@ -98,7 +98,7 @@ for u in ${UBLOCKS[@]+"${UBLOCKS[@]}"}; do
 	     targets=$d ;;
 	*) n=$u targets=$DEVLIST ;;
 	esac
-	case "$n" in '' | *[!0-9]*) die "--format-userdata $u: USERDATA's size in 4096-byte blocks, a number (TWRP: blockdev --getsize64 /dev/block/by-name/USERDATA, divided by 4096)" ;; esac
+	case "$n" in '' | *[!0-9]*) die "--format-userdata $u: USERDATA's size in 4096-byte blocks, a number (TWRP: blockdev --getsize64 /dev/block/by-name/USERDATA, divided by 4096 with awk: its shell's arithmetic stops at 32 bits)" ;; esac
 	[ "$n" -ge 262144 ] || die "--format-userdata $u: $n blocks is under 1 GiB; that is not a phone's USERDATA (it is counted in 4096-byte blocks)"
 	for d in $targets; do UARGS+=(-u "$d=$n"); done
 done
@@ -148,7 +148,7 @@ if [ "$HOST" = macos ]; then
 else
 	B="sudo apt-get install"
 fi
-for t in git curl tar xz make perl flex bison m4; do have $t || missing "$t" "$B $t"; done
+for t in git curl tar xz make perl patch awk flex bison m4; do have $t || missing "$t" "$B $t"; done
 have cc || have clang || missing "a C compiler" "$B clang"
 have clang || missing "clang (the loader is built with it)" "$B clang"
 if have python3 && python3 -c 'import sys; sys.exit(sys.version_info < (3, 8))' 2>/dev/null; then :; else missing "python3 3.8 or newer" "$B python3"; fi
@@ -269,6 +269,13 @@ git -C "$KREPO" cat-file -e "$KREF^{commit}" 2>/dev/null || git -C "$KREPO" fetc
 git -C "$KREPO" -c advice.detachedHead=false checkout -q "$KREF" 2>/dev/null || git -C "$KREPO" -c advice.detachedHead=false checkout -q FETCH_HEAD
 (cd "$KREPO" && python3 tools/hakios-device.py sync $DEVLIST) | sed 's/^/  /'
 for d in $DEVLIST; do [ -x "$KREPO/devices/$d/mkimage.sh" ] || die "devices/$d did not sync (tools/hakios-device.py sync $d)"; done
+# The kernel's tree is laid out once (make kernel: xnu/apply.sh when there is none), and XNU's patches are not re-read after
+# that: a --work used before with another commit gets a fresh one, and the Wi-Fi driver's objects made against the old.
+LAYOUT=$KREPO/xnu-src/.scion-layout
+if [ -d "$KREPO/xnu-src" ] && [ "$(cat "$LAYOUT" 2>/dev/null)" != "$(git -C "$KREPO" rev-parse HEAD)" ]; then
+	echo "  the kernel's tree was laid out from another commit: it is laid out again"
+	rm -rf "$KREPO/xnu-src" "$KREPO/xnu-deps/build/brcmfmac/obj" "$KREPO/xnu-deps/build/brcmfmac/out"
+fi
 echo "  hackios-xnu-kernel $(git -C "$KREPO" rev-parse --short=12 HEAD)"
 for d in $DEVLIST; do echo "  devices/$d $(git -C "$KREPO/devices/$d" rev-parse --short=12 HEAD)"; done
 echo "  scion-packaging $(git -C "$HERE" rev-parse --short=12 HEAD 2>/dev/null || echo '?')$(git -C "$HERE" diff --quiet HEAD -- 2>/dev/null || echo ' (with local changes)')"
@@ -326,9 +333,22 @@ sed -n 1p "$LOGS/identity.log" | sed 's/^/  /'
 KDIR=$WORK/kernels && mkdir -p "$KDIR"
 for d in $DEVLIST; do
 	step "The $d kernel (make ${d}_defconfig && make kernel; the first takes longest: XNU's tree and its dependencies)"
+	rm -f hakios-kernel
 	run "defconfig-$d.log" make "${d}_defconfig"
+	# The S9's Wi-Fi is Linux's brcmfmac, an object of its own that the kernel links when it is there and goes without,
+	# saying nothing, when it is not (xnu-build.sh). It is compiled against the kernel's tree, so that comes first.
+	if [ "$d" = starlte ]; then
+		[ -d xnu-src/xnu-8796.121.2 ] || run layout.log xnu/apply.sh
+		[ -e xnu-deps/host/bin/ld64 ] || run setup.log xnu-deps/setup.sh
+		run mk-brcmfmac.log tools/mk-brcmfmac.sh
+		tail -1 "$LOGS/mk-brcmfmac.log" | sed 's/^/  /'
+	fi
 	run "kernel-$d.log" make kernel JOBS="$JOBS"
 	[ -f hakios-kernel ] || die "make kernel left no hakios-kernel (the log: $LOGS/kernel-$d.log)"
+	git rev-parse HEAD > "$LAYOUT"
+	if [ "$d" = starlte ] && ! grep -aq 'lx: brcmfmac 2:' hakios-kernel; then
+		die "the S9's kernel has no Wi-Fi driver in it: brcmfmac.o was not linked (the logs: $LOGS/mk-brcmfmac.log, $LOGS/kernel-$d.log)"
+	fi
 	cp hakios-kernel "$KDIR/kernel-$d"
 	echo "  $(grep -a 'drivers built in' "$LOGS/kernel-$d.log" | tail -1 || true)"
 	echo "  $KDIR/kernel-$d: $(wc -c < "$KDIR/kernel-$d" | tr -d ' ') bytes"
@@ -393,6 +413,8 @@ with open(sys.argv[1], "rb") as f:
         h.update(b)
 print(h.hexdigest())' "$ZIP")
 echo "$SUM  $(basename "$ZIP")" > "$ZIP.sha256"
+# what to tell whoever is handed the zip
+[ "$KIND" = starlte ] || [ ${#UARGS[@]} -gt 0 ] || cp "$HERE/universal/TESTING.txt" "$OUTDIR/TESTING.txt"
 
 cat <<EOF
 
