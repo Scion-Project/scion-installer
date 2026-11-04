@@ -200,6 +200,14 @@ if [ ${#PROBLEMS[@]} -gt 0 ]; then
 	for p in "${PROBLEMS[@]}"; do printf '  - %s\n      -> %s\n' "${p%%|*}" "${p#*|}" >&2; done
 	exit 1
 fi
+# launchd refuses any job file others can write, and mkapfs.py keeps a file's mode: a work directory on a filesystem with
+# no Unix permissions (WSL's /mnt/c, exFAT, NTFS) makes a phone that boots the kernel and stops at the logo, every job refused
+mkdir -p "$WORK"; _pc=$WORK/.perm-check; rm -f "$_pc"; : > "$_pc"; chmod 644 "$_pc"
+case $(ls -l "$_pc" | cut -c1-10) in
+-rw-r--r--) rm -f "$_pc" ;;
+*) rm -f "$_pc"; die "$WORK does not keep Unix permissions (WSL's /mnt/c, or NTFS/exFAT?). Build on a native filesystem, e.g. --work ~/scion-build" ;;
+esac
+
 echo "build-installer: $HOST, $JOBS jobs, ${SEVENZ:-no 7-Zip (--open)}, $free_gb GB free at $WORK"
 echo "build-installer: for $DEVLIST -> $KIND zip$([ ${#UARGS[@]} = 0 ] || echo ", formats USERDATA (${UARGS[*]})")"
 
