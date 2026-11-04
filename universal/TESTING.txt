@@ -9,8 +9,9 @@ Needs: unlocked bootloader + TWRP. Battery above 50%.
 The installer works out which phone it is on, writes only SYSTEM and BOOT, verifies both, and refuses to touch
 EFS, the modem or recovery. This zip does not write to USERDATA, so your Android data stays there.
 
-What has been tested: this zip was installed for real on one Galaxy S9 (G960F, official TWRP 3.7.0), and booted. Only
-SYSTEM and BOOT changed, and it ran 15 minutes of swiping with no crash of the display server.
+What has been tested: an earlier zip of this kind was installed for real on one Galaxy S9 (G960F, official TWRP 3.7.0),
+and booted. Only SYSTEM and BOOT changed, and it ran 15 minutes of swiping with no crash of the display server.
+THIS zip, the first with Sileo, has not been installed on a phone yet.
 Not tested: any S9+ or Note9 (nobody here has one), a phone that still has Android's data, and anything marked below.
 
 What you get depends on the phone:
@@ -36,7 +37,7 @@ GALAXY S9 - the full system, like the daily image. It runs until you end it.
   About 30 seconds after the first boot, iOS copies Sileo and its packages to /private/var/jb in the background. Then
   its icon appears on the second home screen page, and what you install stays between restarts. With /private/var in
   memory it does nothing: no copy and no icon. Sileo needs Wi-Fi, so join from Settings first.
-  Tested: the icon, opening it, and its installed list on one S9.
+  Tested: the icon, opening it, and its installed list on one S9, with images built separately from the same source.
   NOT tested: refreshing sources or installing a package. Nobody has done either on this layout yet; tell us what happens.
 
 S9+ and NOTE9 - a minimal first run. Nobody has booted Scion on these phones yet.
