@@ -19,6 +19,15 @@ progress() { echo "set_progress $1" > /proc/self/fd/$OUTFD; }
 abort() { ui_print "ERROR: $1"; ui_print "$WRITTEN"; exit 1; }
 WRITTEN="Nothing was written."
 
+# Sizes go through awk. TWRP's shell (mksh) counts in 32 bits, in $(( )) and in test's -le alike: the system image's
+# 2.5 GB came out as -1707 MB on a phone, and a partition's size compared with it could go either way.
+command -v awk > /dev/null || abort "this recovery has no awk, which the sizes are worked out with"
+le() { awk -v a="$1" -v b="$2" 'BEGIN { exit !(a + 0 <= b + 0) }'; }       # is $1 <= $2?
+mb() { awk -v a="$1" 'BEGIN { printf "%.0f", int(a / 1048576) }'; }        # bytes in MB
+plus1() { awk -v a="$1" 'BEGIN { printf "%.0f", a + 1 }'; }
+over() { awk -v a="$1" -v b="$2" 'BEGIN { printf "%.0f", int(a / b) }'; }  # $1 / $2, whole
+rest() { awk -v a="$1" -v b="$2" 'BEGIN { printf "%.0f", a - b * int(a / b) }'; }  # what is left of $1 / $2
+
 # a partition by its name, wherever this recovery keeps the names
 part() {
 	for d in /dev/block/by-name /dev/block/platform/*/by-name /dev/block/bootdevice/by-name; do
@@ -44,12 +53,12 @@ writable() { # NAME DEVICE: may this be written?
 # copy LENGTH bytes from OFFSET of the zip to DEVICE (whose partition is NAME), then check them against SHA
 member() { # what OFFSET LENGTH DEVICE SHA NAME
 	writable "$6" "$4" || abort "$4 ($6) is not a partition this installer writes"
-	ui_print "  writing $1 ($(($3 / 1048576)) MB) to $4"
+	ui_print "  writing $1 ($(mb "$3") MB) to $4"
 	WRITTEN="Something was written: restore your TWRP backup before booting."
-	tail -c +$(($2 + 1)) "$ZIP" | head -c $3 > "$4" || abort "writing $1 to $4 failed"
+	tail -c +"$(plus1 "$2")" "$ZIP" | head -c "$3" > "$4" || abort "writing $1 to $4 failed"
 	sync
 	ui_print "  checking $1 as written"
-	got=$(head -c $3 "$4" | sha256sum | cut -d' ' -f1)
+	got=$(head -c "$3" "$4" | sha256sum | cut -d' ' -f1)
 	[ "$got" = "$5" ] || abort "$1 on $4 reads back wrong (sha256 $got, want $5)"
 }
 
@@ -62,8 +71,9 @@ tail -c +$((PROP_OFF + 1)) "$ZIP" | head -c $PROP_SIZE > /tmp/scion-installer.pr
 ui_print "  $SCION_BUILD"
 
 # Which phone. The boot loader's id (ro.boot.bootloader, from S-Boot: G960FXXU..., G965F..., N960F...; the Duos FD
-# models carry the F's), the model and the device name: each that is set must point at the same phone, and the boot
-# loader's or the model's must be set.
+# models carry the F's), the model and the device name: each that is set must point at the same phone, and an id must
+# be set: the boot loader's, or a model given as SM-.... A recovery's model is often the phone's name instead (the
+# official TWRP says "Galaxy S9"). The name can disagree, but it says nothing alone: the Snapdragon S9 has it too.
 bootloader=$(getprop ro.boot.bootloader)
 [ -n "$bootloader" ] || bootloader=$(getprop ro.bootloader)
 model=$(getprop ro.product.model)
@@ -82,7 +92,15 @@ by_id() { # an id (boot loader or model, without SM-) -> the phone; Korean model
 	esac
 }
 from_bl=$(by_id "$bootloader")
-from_model=$(by_id "${model#SM-}")
+from_id=
+case "$model" in
+SM-*) from_model=$(by_id "${model#SM-}") from_id=$from_model ;;
+"Galaxy S9") from_model=starlte ;;
+"Galaxy S9+"|"Galaxy S9 Plus") from_model=star2lte ;;
+"Galaxy Note9"|"Galaxy Note 9") from_model=crownlte ;;
+Galaxy*|GALAXY*|galaxy*) from_model=unknown ;;                 # another Galaxy, by its name
+*) from_model= ;;                                              # no model, or free text: the ids decide
+esac
 case "$device" in
 starlte|starltexx|starltekor) from_dev=starlte ;;
 star2lte|star2ltexx|star2ltekor) from_dev=star2lte ;;
@@ -100,7 +118,7 @@ for f in "$from_bl" "$from_model" "$from_dev"; do
 	   PHONE=$f ;;
 	esac
 done
-[ -n "$from_bl$from_model" ] || abort "neither the boot loader's id nor the model is known to this recovery: cannot tell which phone this is"
+[ -n "$from_bl$from_id" ] || abort "this recovery gives neither the boot loader's id nor an SM- model: cannot tell which phone this is"
 case "$PHONE" in
 starlte) NAME="Galaxy S9" ;;
 star2lte) NAME="Galaxy S9+ (never run on one: the S9's UEFI, borrowed)" ;;
@@ -121,9 +139,9 @@ writable BOOT "$BOOT" || abort "BOOT ($BOOT) is not writable here, or is one of 
 writable "$SYSTEM_PART" "$SYS" || abort "$SYSTEM_PART ($SYS) is not writable here, or is one of the partitions never written"
 boot_room=$(blockdev --getsize64 "$BOOT")
 sys_room=$(blockdev --getsize64 "$SYS")
-[ "$BOOT_SIZE" -le "$boot_room" ] || abort "the boot image ($BOOT_SIZE bytes) does not fit BOOT ($boot_room)"
-[ "$SYSTEM_SIZE" -le "$sys_room" ] || abort "the system image ($SYSTEM_SIZE bytes) does not fit $SYSTEM_PART ($sys_room)"
-ui_print "  BOOT $BOOT, $SYSTEM_PART $SYS ($((sys_room / 1048576)) MB)"
+le "$BOOT_SIZE" "$boot_room" || abort "the boot image ($BOOT_SIZE bytes) does not fit BOOT ($boot_room)"
+le "$SYSTEM_SIZE" "$sys_room" || abort "the system image ($SYSTEM_SIZE bytes) does not fit $SYSTEM_PART ($sys_room)"
+ui_print "  BOOT $BOOT, $SYSTEM_PART $SYS ($(mb "$sys_room") MB)"
 
 # USERDATA, only for a zip made with -U and still named for it; everything checked before anything is written
 UD=
@@ -135,8 +153,8 @@ if [ "$FORMAT_USERDATA" = 1 ]; then
 	UD=$(part USERDATA) || abort "no USERDATA partition found"
 	writable USERDATA "$UD" || abort "USERDATA ($UD) is not writable here"
 	ud_bytes=$(blockdev --getsize64 "$UD")
-	[ $((ud_bytes % BS)) = 0 ] || abort "USERDATA is $ud_bytes bytes, not whole blocks of $BS"
-	ud_blocks=$((ud_bytes / BS))
+	[ "$(rest "$ud_bytes" $BS)" = 0 ] || abort "USERDATA is $ud_bytes bytes, not whole blocks of $BS"
+	ud_blocks=$(over "$ud_bytes" $BS)
 	eval "UH_OFF=\${UHEAD_${KEY}_${ud_blocks}_OFF:-} UH_SIZE=\${UHEAD_${KEY}_${ud_blocks}_SIZE:-}"
 	eval "UH_BLOCKS=\${UHEAD_${KEY}_${ud_blocks}_BLOCKS:-} UH_SHA=\${UHEAD_${KEY}_${ud_blocks}_DATA_SHA256:-}"
 	eval "UT_OFF=\${UTAIL_${KEY}_${ud_blocks}_OFF:-} UT_SIZE=\${UTAIL_${KEY}_${ud_blocks}_SIZE:-}"
@@ -147,7 +165,7 @@ if [ "$FORMAT_USERDATA" = 1 ]; then
 		ui_print "  (or by hand: tools/mkdatavol.py --userdata $ud_blocks OUTDIR in the kernel repository)"
 		abort "no USERDATA volume for $ud_blocks blocks"
 	fi
-	[ $((UT_SEEK + UT_SIZE / BS)) = "$ud_blocks" ] || abort "the volume's tail does not end where USERDATA does"
+	[ "$(awk -v s="$UT_SEEK" -v n="$UT_SIZE" -v b=$BS 'BEGIN { printf "%.0f", s + int(n / b) }')" = "$ud_blocks" ] || abort "the volume's tail does not end where USERDATA does"
 	for m in /data /sdcard /storage/emulated /data/media; do umount "$m" 2>/dev/null; done
 	grep -q "^$UD " /proc/mounts && abort "USERDATA is still mounted: unmount Data in TWRP's Mount menu, then try again"
 	holders=$(ls "/sys/class/block/${UD##*/}/holders" 2>/dev/null)
@@ -165,14 +183,14 @@ if [ -n "$UD" ]; then
 	ui_print "USERDATA -> an empty HFS Plus volume (Android's data is gone)"
 	writable USERDATA "$UD" || abort "USERDATA ($UD) is not writable here"
 	WRITTEN="Something was written: restore your TWRP backup before booting."
-	tail -c +$((UH_OFF + 1)) "$ZIP" | head -c $UH_SIZE | gunzip -c | dd of="$UD" bs=4194304 2>/dev/null ||
+	tail -c +"$(plus1 "$UH_OFF")" "$ZIP" | head -c "$UH_SIZE" | gunzip -c | dd of="$UD" bs=4194304 2>/dev/null ||
 		abort "writing the volume's head to USERDATA failed"
-	tail -c +$((UT_OFF + 1)) "$ZIP" | head -c $UT_SIZE | dd of="$UD" bs=$BS seek=$UT_SEEK 2>/dev/null ||
+	tail -c +"$(plus1 "$UT_OFF")" "$ZIP" | head -c "$UT_SIZE" | dd of="$UD" bs=$BS seek=$UT_SEEK 2>/dev/null ||
 		abort "writing the volume's tail to USERDATA failed"
 	sync
 	got=$(dd if="$UD" bs=$BS count=$UH_BLOCKS 2>/dev/null | sha256sum | cut -d' ' -f1)
 	[ "$got" = "$UH_SHA" ] || abort "USERDATA's head reads back wrong (sha256 $got, want $UH_SHA)"
-	got=$(dd if="$UD" bs=$BS skip=$UT_SEEK count=$((UT_SIZE / BS)) 2>/dev/null | sha256sum | cut -d' ' -f1)
+	got=$(dd if="$UD" bs=$BS skip=$UT_SEEK count="$(over "$UT_SIZE" $BS)" 2>/dev/null | sha256sum | cut -d' ' -f1)
 	[ "$got" = "$UT_SHA" ] || abort "USERDATA's tail reads back wrong (sha256 $got, want $UT_SHA)"
 	ui_print "  checked: USERDATA's head and tail read back right"
 fi

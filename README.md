@@ -36,7 +36,8 @@ Options:
   `star2lte`, `crownlte` or a list such as `starlte,crownlte`. **Nobody has run Scion on an S9+ or a Note9 yet.**
 - `--format-userdata BLOCKS` (or `DEVICE=BLOCKS`, repeatable): the zip also formats USERDATA for a persistent
   `/private/var`. **This erases Android's data.** BLOCKS is your phone's USERDATA size in 4096-byte blocks. In TWRP's
-  terminal: `echo $(( $(blockdev --getsize64 /dev/block/by-name/USERDATA) / 4096 ))`. For example, 13615227 is a 64 GB S9.
+  terminal: `blockdev --getsize64 /dev/block/by-name/USERDATA | awk '{ printf "%.0f\n", $1 / 4096 }'` (its shell's own
+  arithmetic stops at 32 bits). For example, 13615227 is a 64 GB S9.
 - Extra boot-arguments go after `--`, over the defaults: `./build-installer.sh --ipsw ... -- fps_log=1`.
 - For the S9 it also gives `rtc_pmic= shub=6 abox_mic=1 bt=7` over the defaults, the daily's line (Bluetooth, the sensors
   and the microphone in iOS; `rtc_pmic=` makes the room), and builds the small root with `BT=1 DEVICE=starlte` (Bluetooth's
@@ -155,7 +156,7 @@ You need:
 
 Steps:
 1. In TWRP, back up `Boot`, `System` and `EFS` (EFS holds the IMEI) and copy the backup off the phone.
-2. Copy the zip to the phone (or use `adb sideload`), then Install > the zip > swipe.
+2. Put the zip where TWRP can read it ("Getting the zip onto the phone", below), then Install > the zip > swipe.
 3. Reboot > System.
 
 To leave Scion, either:
@@ -164,6 +165,25 @@ To leave Scion, either:
 - or force a restart with Vol Down + Power.
 
 To get Android back, restore the `Boot` and `System` backups in TWRP.
+
+### Getting the zip onto the phone
+
+The zip is over 2 GiB, which decides how:
+- **Not `adb sideload`.** The recovery's sideload host keeps the size in 32 bits: it saw -1697321647 bytes, and nothing
+  was written.
+- A microSD card is simplest: copy the zip to it on a computer, then Install > Select Storage > Micro SDCard. The card must
+  hold a file over 2 GiB, which FAT32 can, up to 4 GiB.
+- `adb push ZIP /sdcard/`, when TWRP has internal storage mounted and 3 GB free in it.
+- With neither (`USERDATA` already HFS Plus, or Android's encrypted so that TWRP cannot read it), memory: `/tmp` is about
+  1.8 GB until it is made bigger, and the phone has room for the zip while it installs:
+
+  ```sh
+  adb shell mount -o remount,size=3G /tmp
+  adb push scion-exynos9810-installer.zip /tmp/
+  adb shell twrp install /tmp/scion-exynos9810-installer.zip
+  ```
+
+  A copy in memory is gone at the next restart, and nothing is left behind.
 
 ## The Exynos 9810 Galaxys in one zip: S9, S9+, Note9 (`universal/`)
 
@@ -174,10 +194,11 @@ Note9.** Their boot images borrow the S9's UEFI (no UEFI exists for them: hakios
 
 What the zip does in TWRP (`universal/update-binary`, a shell script):
 1. It finds out which phone it is on from the boot loader's id (`ro.boot.bootloader`: G960F..., G965F..., N960F...; the
-   Duos FD models carry the F's), the model and the device name. Each that is set must name the same phone, and the boot
-   loader's id or the model must be set. Anything else is refused before anything is written: another phone, a phone
-   whose ids disagree, a phone the zip has no image for, and the Korean models (G960N, G965N, N960N) unless the zip was
-   made with `-N` (their boards' device trees were never read).
+   Duos FD models carry the F's), the model and the device name. Each that is set must name the same phone, and an id
+   must be set: the boot loader's, or a model given as `SM-...`. The official TWRP gives the model as the phone's name
+   (`Galaxy S9`): the name must agree, and it is not enough alone, since the Snapdragon S9 has it too. Anything else is
+   refused before anything is written: another phone, a phone whose ids disagree, a phone the zip has no image for, and
+   the Korean models (G960N, G965N, N960N) unless the zip was made with `-N` (their boards' device trees were never read).
 2. It writes the iOS system image to `SYSTEM`, then that phone's boot image to `BOOT`, each read back and checked against
    its SHA-256.
 3. Only a zip made with `-U`, and still named `*format-userdata*` when it is flashed, also formats `USERDATA` as HFS Plus

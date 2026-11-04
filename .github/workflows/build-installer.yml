@@ -25,18 +25,21 @@ jobs:
       - name: Packages
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y -q --no-install-recommends busybox hfsprogs shellcheck 7zip clang lld meson ninja-build llvm \
+          sudo apt-get install -y -q --no-install-recommends busybox mksh hfsprogs shellcheck 7zip clang lld meson ninja-build llvm \
             flex bison m4 autoconf automake libtool-bin uuid-dev pkg-config python3-venv
       - name: shellcheck
         run: shellcheck -S warning build-installer.sh
-      - name: The universal installer against a pretend TWRP (universal/selftest.sh, bash and busybox sh)
+      - name: The universal installer against a pretend TWRP (universal/selftest.sh; sh, busybox sh, and mksh, TWRP's own, with its 32-bit arithmetic)
         run: |
           universal/selftest.sh
           SH="busybox sh" universal/selftest.sh
-      - name: The same with -U (USERDATA formatted; tools/mkdatavol.py from the kernel repository)
+          SH=mksh universal/selftest.sh
+          SH=mksh BIG=1 universal/selftest.sh
+      - name: The same with -U (USERDATA formatted; tools/mkdatavol.py from the kernel repository), at a real phone's USERDATA too
         run: |
           git clone -q --depth 1 https://github.com/Scion-Project/hackios-xnu-kernel.git /tmp/k
           SCION_KERNEL=/tmp/k universal/selftest.sh -U
+          SCION_KERNEL=/tmp/k SH=mksh UBLOCKS=13615227 universal/selftest.sh -U
       - name: build-installer.sh refuses what is not the 20F66 IPSW, and downloads none
         run: |
           set -u
