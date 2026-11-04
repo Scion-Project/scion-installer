@@ -36,7 +36,7 @@ set -euo pipefail
 # The kernel repository's commit this script was last run against end to end. Its devices/manifest.conf pins the device
 # repositories (hakios-starlte, hakios-star2lte, hakios-crownlte); tools/hakios-device.py sync checks them out there.
 KERNEL_REPO=https://github.com/Scion-Project/hackios-xnu-kernel.git
-KERNEL_REV=f94d38eb4dcc94c229a9beb37746e761ac2b95f7
+KERNEL_REV=85593747fa08d0cc06b7ccfd4544fe6c60c11a30
 
 # The one IPSW the build is made for (sysimage/unpack.sh and select-system.py know only this one). These are facts
 # about Apple's file, published with it; the file itself is never fetched here.
@@ -124,7 +124,7 @@ KREPO=$WORK/hackios-xnu-kernel
 S9_ARGS=
 S9_USERLAND=()
 case " $DEVLIST " in *" starlte "*)
-	S9_ARGS="rtc_pmic= shub=6 abox_mic=1 bt=7"
+	S9_ARGS="rtc_pmic= shub=6 bt=7"
 	S9_USERLAND=(BT=1 DEVICE=starlte) ;;
 esac
 
