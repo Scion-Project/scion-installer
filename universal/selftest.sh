@@ -42,7 +42,7 @@ EOF
 	chmod +x "$K/devices/$d/mkimage.sh"
 	echo "kernel $d" > "$T/kernel-$d"
 done
-[ "$FORMAT" = 0 ] || cp "$HERE/../../hackios-xnu-kernel/tools/mkdatavol.py" "$K/tools/" 2>/dev/null ||
+[ "$FORMAT" = 0 ] || cp "$HERE/../../scion-kernel/tools/mkdatavol.py" "$K/tools/" 2>/dev/null ||
 	cp "${SCION_KERNEL:?SCION_KERNEL: the kernel repository, for tools/mkdatavol.py}/tools/mkdatavol.py" "$K/tools/"
 echo root > "$K/userland/root.apfs"
 head -c 32 /dev/zero > "$T/system.apfs"; printf NXSB >> "$T/system.apfs"; head -c 65500 /dev/urandom >> "$T/system.apfs"
