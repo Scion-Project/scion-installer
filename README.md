@@ -1,10 +1,10 @@
-# scion-packaging
+# scion-installer
 
 Installers for Scion's phones. Each one is a single zip that a phone's recovery flashes: Scion's boot image and the iOS
 system image, written to the phone's own partitions.
 
 Only the tooling lives here. Everything an installer carries is built locally, from the kernel repository
-([Scion-Project/hackios-xnu-kernel](https://github.com/Scion-Project/hackios-xnu-kernel)) and from your own IPSW:
+([Scion-Project/scion-kernel](https://github.com/Scion-Project/scion-kernel)) and from your own IPSW:
 - the iOS system image, which holds iOS's own files;
 - the loader, which holds your iPhone's identity.
 
@@ -90,7 +90,7 @@ the script refuses anything but the 20F66 IPSW. The zip that comes out installs,
   is also there for a while. The zip is 2.4 GB. Once the zip is made you can delete `scion-build`, but the next build
   then starts from nothing.
 - **Linux**: the script runs on x86_64 with theos's toolchain. CI runs it on Ubuntu 24.04, so that path is tested
-  without an IPSW. The real build on Linux is the same as the one the S9's CI job runs (hakios-starlte,
+  without an IPSW. The real build on Linux is the same as the one the S9's CI job runs (scion-starlte,
   `s9-installer`), but nobody has timed it on a desk machine yet. arm64 Linux has no theos toolchain here.
 - **Windows**: run it in WSL (Ubuntu 24.04), with `--work` in WSL's own filesystem (`~/...`), not under `/mnt/c`.
 
@@ -98,7 +98,7 @@ the script refuses anything but the 20F66 IPSW. The zip that comes out installs,
 
 One zip for the Galaxy S9 (SM-G960F, `starlte`), the Galaxy S9+ (SM-G965F, `star2lte`) and the Galaxy Note9 (SM-N960F,
 `crownlte`), with a boot image for each phone it was made for and one iOS system image. **Nobody has run Scion on an S9+ or a
-Note9.** Their boot images borrow the S9's UEFI (no UEFI exists for them: hakios-star2lte and hakios-crownlte, README,
+Note9.** Their boot images borrow the S9's UEFI (no UEFI exists for them: scion-star2lte and scion-crownlte, README,
 "The UEFI"), their first runs are tests, and their default boot-arguments start no driver of the board's.
 
 What the zip does in TWRP (`universal/update-binary`, a shell script):
@@ -145,7 +145,7 @@ make loader && make images && (source ./xnu-env.sh; cd userland && GL=1 NO_AIR=1
 Then here:
 
 ```sh
-SCION_KERNEL=/path/to/hackios-xnu-kernel universal/mkinstaller.sh -s /path/to/hackios-xnu-kernel/userland/system.apfs \
+SCION_KERNEL=/path/to/scion-kernel universal/mkinstaller.sh -s /path/to/scion-kernel/userland/system.apfs \
     -k starlte=/tmp/k-starlte -k star2lte=/tmp/k-star2lte -k crownlte=/tmp/k-crownlte
 # -> out/scion-exynos9810-installer.zip
 # a persistent /private/var as well, for an S9 of 64 GB (USERDATA 13615227 blocks):
@@ -157,7 +157,7 @@ against a pretend TWRP: each phone gets its own image, the refusals refuse, EFS 
 nothing of Apple's or Samsung's. `SH="busybox sh"` runs update-binary under busybox's shell, as TWRP does.
 
 **The system image is never in this repository or in the zip's sources.** It is built from your own IPSW. The S9's CI
-job (hakios-starlte, `s9-installer`) downloads the IPSW from Apple's CDN at run time, builds it, and uploads only an
+job (scion-starlte, `s9-installer`) downloads the IPSW from Apple's CDN at run time, builds it, and uploads only an
 encrypted archive.
 
 The zip has no Zip64 (TWRP's reader): the system image and three boot images fit under 4 GiB with room to spare.

@@ -34,9 +34,9 @@
 set -euo pipefail
 
 # The kernel repository's commit this script was last run against end to end. Its devices/manifest.conf pins the device
-# repositories (hakios-starlte, hakios-star2lte, hakios-crownlte); tools/hakios-device.py sync checks them out there.
-KERNEL_REPO=https://github.com/Scion-Project/hackios-xnu-kernel.git
-KERNEL_REV=9668db530ffb0dc94ea5a68ecf0442386fedbd9e
+# repositories (scion-starlte, scion-star2lte, scion-crownlte); tools/hakios-device.py sync checks them out there.
+KERNEL_REPO=https://github.com/Scion-Project/scion-kernel.git
+KERNEL_REV=5d6ecb7e207bd36a36d15ea923b3916782f0a0f0
 
 # The one IPSW the build is made for (sysimage/unpack.sh and select-system.py know only this one). These are facts
 # about Apple's file, published with it; the file itself is never fetched here.
@@ -113,7 +113,8 @@ else
 	IPSW=$(cd "$(dirname "$IPSW")" && pwd)/$(basename "$IPSW")
 fi
 WORK=$(abs "$WORK") OUTDIR=$(abs "$OUTDIR")
-KREPO=$WORK/hackios-xnu-kernel
+KREPO=$WORK/scion-kernel
+[ ! -d "$WORK/hackios-xnu-kernel/.git" ] || [ -e "$KREPO" ] || KREPO=$WORK/hackios-xnu-kernel   # a work directory made before the rename
 # What the S9 is given beyond the kernel's defaults, so that the installer's S9 is the daily's, for it alone (the S9+ and
 # the Note9 keep their first run). Over the defaults: Bluetooth, the sensors and the microphone in iOS, seen working on
 # the phone but left out of devices/starlte's defaults for want of room on the line; rtc_pmic= makes the room, as the
@@ -289,9 +290,9 @@ if [ -d "$KREPO/xnu-src" ] && [ "$(cat "$LAYOUT" 2>/dev/null)" != "$(git -C "$KR
 	echo "  the kernel's tree was laid out from another commit: it is laid out again"
 	rm -rf "$KREPO/xnu-src" "$KREPO/xnu-deps/build/brcmfmac/obj" "$KREPO/xnu-deps/build/brcmfmac/out"
 fi
-echo "  hackios-xnu-kernel $(git -C "$KREPO" rev-parse --short=12 HEAD)"
+echo "  scion-kernel $(git -C "$KREPO" rev-parse --short=12 HEAD)"
 for d in $DEVLIST; do echo "  devices/$d $(git -C "$KREPO/devices/$d" rev-parse --short=12 HEAD)"; done
-echo "  scion-packaging $(git -C "$HERE" rev-parse --short=12 HEAD 2>/dev/null || echo '?')$(git -C "$HERE" diff --quiet HEAD -- 2>/dev/null || echo ' (with local changes)')"
+echo "  scion-installer $(git -C "$HERE" rev-parse --short=12 HEAD 2>/dev/null || echo '?')$(git -C "$HERE" diff --quiet HEAD -- 2>/dev/null || echo ' (with local changes)')"
 [ "$HOST" = macos ] && export PATH="$KREPO/tools/macos-bin:$PATH"   # flock, GNU timeout and stat, sha256sum
 
 # --- Linux: theos (its cctools linker and iPhoneOS16.5.sdk), as the S9's CI lays it out --------------------------------

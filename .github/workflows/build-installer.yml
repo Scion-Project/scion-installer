@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       kernel_ref:
-        description: Scion-Project/hackios-xnu-kernel commit or branch (empty for the one build-installer.sh pins)
+        description: Scion-Project/scion-kernel commit or branch (empty for the one build-installer.sh pins)
         default: ""
   schedule:
     - cron: "17 4 * * 1"     # Mondays: the pinned revision, and the kernel repository's main (is the pin falling behind?)
@@ -37,7 +37,7 @@ jobs:
           SH=mksh BIG=1 universal/selftest.sh
       - name: The same with -U (USERDATA formatted; tools/mkdatavol.py from the kernel repository), at a real phone's USERDATA too
         run: |
-          git clone -q --depth 1 https://github.com/Scion-Project/hackios-xnu-kernel.git /tmp/k
+          git clone -q --depth 1 https://github.com/Scion-Project/scion-kernel.git /tmp/k
           SCION_KERNEL=/tmp/k universal/selftest.sh -U
           SCION_KERNEL=/tmp/k SH=mksh UBLOCKS=13615227 universal/selftest.sh -U
       - name: build-installer.sh refuses what is not the 20F66 IPSW, and downloads none

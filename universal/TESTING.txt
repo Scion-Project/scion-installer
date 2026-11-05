@@ -75,7 +75,8 @@ Steps
 
 Passcode (S9)
 -------------
-You can set one in Settings, but it only gates the screen: nothing is encrypted with it.
+You can set one in Settings. There is no Secure Enclave, and it protects keychain items only: your files are not encrypted,
+a 6-digit code can be guessed offline by anyone who reads the flash, and a forgotten passcode loses the keychain.
 Don't enable Erase Data under Passcode. This port does not support a wipe, and nobody has tested what it does here.
 
 Thank you!

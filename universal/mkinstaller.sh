@@ -13,7 +13,7 @@
 #   -k  a phone and its kernel (make DEVICE_defconfig && make kernel there, hakios-kernel copied away): one -k a phone;
 #       DEVICE is starlte, star2lte or crownlte. The zip installs on the phones it has a kernel for, and no other.
 #   -K  the kernel repository, with devices/starlte (and devices/star2lte, devices/crownlte for those) synced; default
-#       $SCION_KERNEL, else ../hackios-xnu-kernel beside this repository
+#       $SCION_KERNEL, else ../scion-kernel beside this repository
 #   -r  the small root (ALONE=1 RC=rc.launchd), the same for every phone; default the kernel repo's userland/root.apfs
 #   -a  more boot-arguments for one phone only (repeatable), over its defaults
 #   -p  the partition the system image goes to (SYSTEM)
@@ -37,7 +37,8 @@
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/.." && pwd)
-KREPO=${SCION_KERNEL:-$REPO/../hackios-xnu-kernel}
+KREPO=${SCION_KERNEL:-$REPO/../scion-kernel}
+[ -n "${SCION_KERNEL:-}" ] || [ -d "$KREPO" ] || [ ! -d "$REPO/../hackios-xnu-kernel" ] || KREPO=$REPO/../hackios-xnu-kernel   # a checkout from before the rename
 SYSTEM= ROOT= PART=SYSTEM SECS= OUT= QUIET=-q KOREAN=0 FORMAT=0
 KERNEL_starlte= KERNEL_star2lte= KERNEL_crownlte= EXTRA_starlte= EXTRA_star2lte= EXTRA_crownlte=
 UBLOCKS_starlte= UBLOCKS_star2lte= UBLOCKS_crownlte=
