@@ -36,7 +36,7 @@ set -euo pipefail
 # The kernel repository's commit this script was last run against end to end. Its devices/manifest.conf pins the device
 # repositories (scion-starlte, scion-star2lte, scion-crownlte); tools/hakios-device.py sync checks them out there.
 KERNEL_REPO=https://github.com/Scion-Project/scion-kernel.git
-KERNEL_REV=5d6ecb7e207bd36a36d15ea923b3916782f0a0f0
+KERNEL_REV=e64ad899925e9ac3a78a99c48071433cf5f5e387
 
 # The one IPSW the build is made for (sysimage/unpack.sh and select-system.py know only this one). These are facts
 # about Apple's file, published with it; the file itself is never fetched here.
