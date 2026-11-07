@@ -119,8 +119,10 @@ KREPO=$WORK/scion-kernel
 # the Note9 keep their first run). Over the defaults: Bluetooth, the sensors and the microphone in iOS, seen working on
 # the phone but left out of devices/starlte's defaults for want of room on the line; rtc_pmic= makes the room, as the
 # daily does (all of it, with the loader's words, in the 607 characters the kernel holds, bt=7 last).
-# In the small root (GL=1 ... below): BT=1, Bluetooth's jobs and libraries; DEVICE=starlte, the firmware the S9's
-# repository carries in fw/ (ABOX's for the speakers, Wi-Fi's, Bluetooth's patch, the sensor hub's). Both do nothing on
+# In the small root (GL=1 ... below): BT=1, Bluetooth's jobs and libraries; DEVICE=starlte, the firmware of the S9's
+# repository in fw/ (ABOX's for the speakers, Wi-Fi's, Bluetooth's patch, the sensor hub's), which the repository does not carry
+# (only its sums): userland/build.sh runs the S9's tools/fetch-firmware.sh, which downloads the pinned public files, or takes them
+# from a directory of your own, FIRMWARE_FROM=DIR in the environment. Both do nothing on
 # the other two: their kernels start none of these drivers (bluetoothd finds no address and exits; launchd paces it).
 S9_ARGS=
 S9_USERLAND=()
