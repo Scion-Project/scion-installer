@@ -4,3 +4,5 @@
 *.apfs
 out/
 scion-build/
+__pycache__/
+*.pyc
