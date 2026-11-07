@@ -35,6 +35,11 @@ Options:
 - `--device`: every build is the universal zip, with all three phones unless you give `starlte`, `star2lte`, `crownlte` or
   a list such as `starlte,crownlte`. **Nobody has run Scion on an S9+ or a Note9 yet.**
 - `--no-sileo`: leave Sileo and the Procursus bootstrap out of the system image.
+- `--webclips`: web apps on the home screen from the first boot (off by default): Wikipedia, Mastodon, Element,
+  OpenStreetMap, Excalidraw, Jitsi Meet, Bluesky and Scion's own page, as the web clips that Safari's "Add to Home
+  Screen" makes (no configuration profile, no account). The icons are drawn by the kernel repository's
+  `tools/mk-webclips.py`, not the sites' logos. They open in Safari; nothing has been tried on a phone yet. It needs a
+  kernel revision that has `WEBCLIPS=1` (`--kernel-ref`), and refuses one that does not.
 - `--format-userdata BLOCKS` (or `DEVICE=BLOCKS`, repeatable): the zip also formats USERDATA for a persistent
   `/private/var`. **This erases Android's data.** BLOCKS is your phone's USERDATA size in 4096-byte blocks. In TWRP's
   terminal: `blockdev --getsize64 /dev/block/by-name/USERDATA | awk '{ printf "%.0f\n", $1 / 4096 }'` (its shell's own
