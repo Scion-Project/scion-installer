@@ -1,0 +1,16 @@
+Third-party material in scion-installer, and what it builds from
+
+In this repository:
+
+- tools/gpt-plan.py: its GPT readers (the header, the entry array, the protective MBR) are adapted from tools/dualboot.py of
+  scion-blazer, by Anders Madsen (TheAndersMadsen), MIT, imported into Scion's organisation with his permission. scion-blazer is
+  itself based on dgigantino/ios-tegu. The plan, its refusals and its tests are written fresh. scion-blazer's tools/gpt_plan.py
+  states no licence, so it was read for its design only and none of it is copied.
+- Everything else here is under this repository's LICENSE (MIT).
+
+Fetched or built on the user's machine, never committed (their own licences):
+
+- Scion's kernel and loader (github.com/Scion-Project/scion-kernel, a fork of HakiOS by the HakiOS authors; see its NOTICE).
+- theos and its SDKs, Procursus and Sileo packages, and the rest build-installer.sh fetches: each under its own licence.
+- The iOS 16.5 IPSW, which the user supplies: Apple's, never in this repository and never downloaded by it. No Apple software,
+  vendor firmware or keys are in this repository.
