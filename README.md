@@ -94,6 +94,17 @@ the script refuses anything but the 20F66 IPSW. The zip that comes out installs,
   `s9-installer`), but nobody has timed it on a desk machine yet. arm64 Linux has no theos toolchain here.
 - **Windows**: run it in WSL (Ubuntu 24.04), with `--work` in WSL's own filesystem (`~/...`), not under `/mnt/c`.
 
+## Dual-boot partition plan, a dry run (`tools/gpt-plan.py`)
+
+For a Galaxy S9 that is to keep Android beside iOS: reads a dump of LUN 0's partition table (`--image`, or `--head` and `--tail` made
+with a read-only `dd`), and prints what the table would become. USERDATA keeps its first LBA and is shrunk; `SCIONSTORE`, `SCIONROOT` and
+`SCIONVAR` are carved from its old tail, 1 MiB aligned. Every other entry stays byte for byte, and the tool refuses a table where a
+protected partition (EFS, PARAM, PERSISTENT, STEADY, DTB and the rest of the list in the file) would move.
+
+**It writes nothing, anywhere, and has no write mode.** Nothing here has been run on a phone. `python3 -I tools/test_gpt_plan.py` is its host test.
+Its GPT readers are adapted from scion-blazer's `tools/dualboot.py` (MIT); see the file's header. The kernel side, `docs/dual-boot-s9.md`
+in scion-kernel, has the order of tests and the way back.
+
 ## The Exynos 9810 Galaxys in one zip: S9, S9+, Note9 (`universal/`)
 
 One zip for the Galaxy S9 (SM-G960F, `starlte`), the Galaxy S9+ (SM-G965F, `star2lte`) and the Galaxy Note9 (SM-N960F,
