@@ -36,10 +36,11 @@
 # published. Nothing of Apple's is in this repository or in the kernel's; the project ships none and downloads none.
 set -euo pipefail
 
-# The kernel repository's commit this script was last run against end to end. Its devices/manifest.conf pins the device
+# The kernel repository's commit this script builds. Moved on 8 Nov to the kernel's main that has the web clips (--webclips needs
+# WEBCLIPS=1 in userland/build.sh); that revision builds in all six kernel configurations, but the installer has not been run end to end against it. Its devices/manifest.conf pins the device
 # repositories (scion-starlte, scion-star2lte, scion-crownlte); tools/hakios-device.py sync checks them out there.
 KERNEL_REPO=https://github.com/Scion-Project/scion-kernel.git
-KERNEL_REV=cb979c52303b9399e0a99034e12a757343d55518
+KERNEL_REV=51b36ac6fb0323ad5ecd552e82963113a544ae60
 
 # The one IPSW the build is made for (sysimage/unpack.sh and select-system.py know only this one). These are facts
 # about Apple's file, published with it; the file itself is never fetched here.
