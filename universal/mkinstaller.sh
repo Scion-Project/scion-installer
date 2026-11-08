@@ -7,7 +7,7 @@
 #
 #   universal/mkinstaller.sh -s system.apfs -k DEVICE=KERNEL [-k DEVICE=KERNEL ...] [-K kernel-repo] [-r root.apfs]
 #                            [-a DEVICE="boot-args"] [-p PARTITION] [-t SECS] [-N] [-V]
-#                            [-U -u DEVICE=BLOCKS ...] [-o installer.zip] [extra boot-args for every phone...]
+#                            [-U -u DEVICE=BLOCKS ...] [-B] [-F] [-o installer.zip] [extra boot-args for every phone...]
 #
 #   -s  the iOS system image (userland/system.apfs of the kernel repo, built from your own IPSW): one for every phone
 #   -k  a phone and its kernel (make DEVICE_defconfig && make kernel there, hakios-kernel copied away): one -k a phone;
@@ -29,7 +29,16 @@
 #       /dev/block/by-name/USERDATA | awk '{ printf "%.0f\n", $1 / 4096 }'; its shell's own arithmetic stops at 32 bits). The volume is made here (the kernel repo's tools/mkdatavol.py
 #       --userdata, with mkfs.hfsplus or macOS's newfs_hfs: MKFS=...); a phone whose USERDATA has another size is told
 #       the command to make its own and nothing is written. Repeatable: one per phone and storage size.
-#   -o  the zip (out/scion-exynos9810-installer.zip, or ...-format-userdata.zip with -U)
+#   -B  a kernel-update zip: the boot images and no system image (the zip is a few tens of MB, not 2.5 GB). -s is still given: its
+#       size and SHA-256 go in installer.prop, and scion-install.sh --mode kernel-update refuses a phone whose SYSTEM is not that
+#       image. update-binary refuses such a zip (its installer.prop says version 3), so TWRP's Install cannot flash one by mistake.
+#       The name defaults to ...-kernel-update.zip. Not with -U.
+#   -F  before building: for each phone whose device repository has tools/fetch-firmware.sh, run its --check (the firmware in
+#       place against its pinned sums) and stop if it fails; the SHA-256 of the pinned sums goes in installer.prop and in the log
+#   -o  the zip (out/scion-exynos9810-installer.zip, or ...-format-userdata.zip with -U, ...-kernel-update.zip with -B)
+#
+# scion-install.sh (beside this script) is copied next to the zip: the verified way in from TWRP's terminal, a dry run unless
+# --apply (README.md, "Verified install"). update-binary is the way in that TWRP's Install runs; neither replaces the other.
 #
 # The zip carries iOS's own files, from your IPSW, and the loader carries your iPhone's identity: it is yours to hand on
 # privately, never to be published or committed (.gitignore keeps it out of this repository). Nothing of Apple's is in
@@ -39,7 +48,7 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/.." && pwd)
 KREPO=${SCION_KERNEL:-$REPO/../scion-kernel}
 [ -n "${SCION_KERNEL:-}" ] || [ -d "$KREPO" ] || [ ! -d "$REPO/../hackios-xnu-kernel" ] || KREPO=$REPO/../hackios-xnu-kernel   # a checkout from before the rename
-SYSTEM= ROOT= PART=SYSTEM SECS= OUT= QUIET=-q KOREAN=0 FORMAT=0
+SYSTEM= ROOT= PART=SYSTEM SECS= OUT= QUIET=-q KOREAN=0 FORMAT=0 BOOTONLY=0 FWCHECK=0
 KERNEL_starlte= KERNEL_star2lte= KERNEL_crownlte= EXTRA_starlte= EXTRA_star2lte= EXTRA_crownlte=
 UBLOCKS_starlte= UBLOCKS_star2lte= UBLOCKS_crownlte=
 get() { eval "echo \"\${$1_$2:-}\""; }        # get KERNEL starlte (no associative arrays: macOS's bash is 3.2)
@@ -54,19 +63,20 @@ add_pair() { # NAME VALUE ARRAY
 	   printf -v "UBLOCKS_$dev" %s "$(get UBLOCKS "$dev") $val" ;;
 	esac
 }
-while getopts s:k:K:r:a:p:t:o:u:NVU opt; do
+while getopts s:k:K:r:a:p:t:o:u:NVUBF opt; do
 	case $opt in
 	s) SYSTEM=$OPTARG ;; K) KREPO=$OPTARG ;; r) ROOT=$OPTARG ;; p) PART=$OPTARG ;; t) SECS=$OPTARG ;; o) OUT=$OPTARG ;;
 	k|a|u) add_pair "$opt" "$OPTARG" ;;
-	N) KOREAN=1 ;; V) QUIET= ;; U) FORMAT=1 ;;
-	*) sed -n 2,37p "$0"; exit 2 ;;
+	N) KOREAN=1 ;; V) QUIET= ;; U) FORMAT=1 ;; B) BOOTONLY=1 ;; F) FWCHECK=1 ;;
+	*) sed -n 2,45p "$0"; exit 2 ;;
 	esac
 done
 shift $((OPTIND - 1))
 abs() { case "$1" in /*) echo "$1" ;; *) echo "$PWD/$1" ;; esac; }
 [ -n "$SYSTEM" ] || { echo "mkinstaller.sh: -s system.apfs is required" >&2; exit 2; }
 [ -n "$KERNEL_starlte$KERNEL_star2lte$KERNEL_crownlte" ] || { echo "mkinstaller.sh: -k DEVICE=KERNEL, at least one" >&2; exit 2; }
-[ -n "$OUT" ] || OUT=$REPO/out/scion-exynos9810-installer$(if [ "$FORMAT" = 1 ]; then echo -format-userdata; fi).zip
+[ "$BOOTONLY" = 0 ] || [ "$FORMAT" = 0 ] || { echo "mkinstaller.sh: -B (no system image) and -U (formats USERDATA) do not go together" >&2; exit 2; }
+[ -n "$OUT" ] || OUT=$REPO/out/scion-exynos9810-installer$(if [ "$FORMAT" = 1 ]; then echo -format-userdata; fi)$(if [ "$BOOTONLY" = 1 ]; then echo -kernel-update; fi).zip
 KREPO=$(cd "$KREPO" && pwd)
 SYSTEM=$(abs "$SYSTEM") OUT=$(abs "$OUT") ROOT=$(abs "${ROOT:-$KREPO/userland/root.apfs}")
 [ "$(dd if="$SYSTEM" bs=1 skip=32 count=4 2>/dev/null)" = NXSB ] || { echo "mkinstaller.sh: $SYSTEM is not an APFS container" >&2; exit 1; }
@@ -99,7 +109,7 @@ WORK=$(mktemp -d "${TMPDIR:-/tmp}/scion-universal.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
 MEMBERS=() DEVS=
 PROP="# The installer's facts, read by update-binary (sourced: shell assignments only). Made by universal/mkinstaller.sh.
-SCION_INSTALLER=2
+SCION_INSTALLER=$(if [ "$BOOTONLY" = 1 ]; then echo 3; else echo 2; fi)
 SYSTEM_PART=$PART
 KOREAN=$KOREAN
 FORMAT_USERDATA=$FORMAT
@@ -107,6 +117,13 @@ SYSTEM_OFF=@SYSTEM_OFF@
 SYSTEM_SIZE=@SYSTEM_SIZE@
 SYSTEM_SHA256=@SYSTEM_SHA256@
 "
+if [ "$BOOTONLY" = 1 ]; then
+	# no system.apfs member for storedzip.py to measure: its facts go in as they are, and its offset is 0 (nothing to copy)
+	if command -v sha256sum > /dev/null 2>&1; then sys_sha=$(sha256sum "$SYSTEM" | cut -d' ' -f1); else sys_sha=$(shasum -a 256 "$SYSTEM" | cut -d' ' -f1); fi
+	PROP=${PROP/SYSTEM_OFF=@SYSTEM_OFF@/SYSTEM_OFF=0}
+	PROP=${PROP/SYSTEM_SIZE=@SYSTEM_SIZE@/SYSTEM_SIZE=$(wc -c < "$SYSTEM" | tr -d ' ')}
+	PROP=${PROP/SYSTEM_SHA256=@SYSTEM_SHA256@/SYSTEM_SHA256=$sys_sha}
+fi
 for dev in starlte star2lte crownlte; do
 	[ -n "$(get KERNEL $dev)" ] || continue
 	k=$(abs "$(get KERNEL $dev)")
@@ -114,6 +131,21 @@ for dev in starlte star2lte crownlte; do
 	[ -x "$KREPO/devices/$dev/mkimage.sh" ] || { echo "mkinstaller.sh: $KREPO/devices/$dev is not synced (tools/hakios-device.py sync $dev)" >&2; exit 1; }
 	[ "$dev" != starlte ] || grep -q -- '--with' "$KREPO/devices/starlte/mkimage.sh" || {
 		echo "mkinstaller.sh: $KREPO/devices/starlte is older than the S9's defaults: tools/hakios-device.py sync starlte" >&2; exit 1; }
+	if [ "$FWCHECK" = 1 ]; then
+		fwtool="$KREPO/devices/$dev/tools/fetch-firmware.sh"
+		if [ -x "$fwtool" ]; then
+			"$fwtool" --check > /dev/null 2>&1 || { echo "mkinstaller.sh: -F: $dev's firmware is not complete or not the pinned files: $fwtool, then --check" >&2; exit 1; }
+			sums=$(find "$KREPO/devices/$dev/firmware" -name SHA256SUMS | sort | xargs cat)
+			if [ -n "$sums" ]; then
+				fw_sha=$(printf '%s\n' "$sums" | if command -v sha256sum > /dev/null 2>&1; then sha256sum; else shasum -a 256; fi | cut -d' ' -f1)
+				PROP+="FW_$(echo "$dev" | tr a-z A-Z)_SUMS_SHA256=$fw_sha
+"
+				echo "mkinstaller.sh: $dev: firmware checked against its pinned sums (sums sha256 $fw_sha)"
+			fi
+		else
+			echo "mkinstaller.sh: -F: $dev has no tools/fetch-firmware.sh: no pinned firmware to check"
+		fi
+	fi
 	if [ "$dev" = starlte ]; then
 		args="$S9_ARGS" secs=${SECS:-0} borrow=
 	else
@@ -161,15 +193,17 @@ done
 for dev in starlte star2lte crownlte; do
 	[ -z "$(get UBLOCKS $dev)" ] || [ -n "$(get KERNEL $dev)" ] || { echo "mkinstaller.sh: -u $dev=...: no -k $dev" >&2; exit 2; }
 done
-BUILD="Scion $(git -C "$KREPO" describe --always --dirty 2>/dev/null || echo '?'), $(date -u +%Y-%m-%d), for$DEVS, system on $PART$(if [ "$FORMAT" = 1 ]; then echo ", formats USERDATA"; fi)"
+BUILD="Scion $(git -C "$KREPO" describe --always --dirty 2>/dev/null || echo '?'), $(date -u +%Y-%m-%d), for$DEVS, system on $PART$(if [ "$FORMAT" = 1 ]; then echo ", formats USERDATA"; fi)$(if [ "$BOOTONLY" = 1 ]; then echo ", kernel update only"; fi)"
 PROP+="DEVICES=\"${DEVS# }\"
 SCION_BUILD=\"$BUILD\"
 "
 printf '%s' "$PROP" > "$WORK/installer.prop.in"
 mkdir -p "$(dirname "$OUT")"
+if [ "$BOOTONLY" = 1 ]; then SYSMEMBER=(); else SYSMEMBER=(system.apfs="$SYSTEM"); fi
 python3 "$REPO/tools/storedzip.py" "$OUT" "$WORK/installer.prop.in" \
 	META-INF/com/google/android/update-binary="$HERE/update-binary" \
 	META-INF/com/google/android/updater-script="$HERE/updater-script" \
-	"${MEMBERS[@]}" system.apfs="$SYSTEM"
+	"${MEMBERS[@]}" ${SYSMEMBER[@]+"${SYSMEMBER[@]}"}
+cp "$HERE/scion-install.sh" "$(dirname "$OUT")/scion-install.sh"
 echo "mkinstaller.sh: $OUT: $(( $(wc -c < "$OUT") / 1048576 )) MB, for$DEVS, the system image to $PART$(if [ "$FORMAT" = 1 ]; then echo "; formats USERDATA"; fi)"
 echo "mkinstaller.sh: yours only (iOS's files and your iPhone's identity are in it): hand it on privately"

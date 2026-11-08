@@ -28,7 +28,9 @@ jobs:
           sudo apt-get install -y -q --no-install-recommends busybox mksh hfsprogs shellcheck 7zip clang lld meson ninja-build llvm \
             flex bison m4 autoconf automake libtool-bin uuid-dev pkg-config python3-venv
       - name: shellcheck
-        run: shellcheck -S warning build-installer.sh
+        run: shellcheck -S warning build-installer.sh universal/scion-install.sh
+      - name: The verified install (universal/scion-install.sh) against fake partitions, in sh, mksh and busybox sh
+        run: SHELLS="sh,mksh,busybox sh" python3 -I tools/test_scion_install.py
       - name: The universal installer against a pretend TWRP (universal/selftest.sh; sh, busybox sh, and mksh, TWRP's own, with its 32-bit arithmetic)
         run: |
           universal/selftest.sh
