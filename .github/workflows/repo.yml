@@ -1,0 +1,38 @@
+# The Sileo repository (repo/): built and tested on every change to it. Nothing is deployed from here.
+name: repo
+
+on:
+  pull_request:
+    paths: ["repo/**", ".github/workflows/repo.yml"]
+  push:
+    branches: [main]
+    paths: ["repo/**", ".github/workflows/repo.yml"]
+  workflow_dispatch:
+    inputs:
+      kernel_ref:
+        description: Scion-Project/scion-kernel branch or commit with the web clips (empty for main)
+        default: ""
+
+jobs:
+  repo:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: The kernel repository, for the web-clip manifest and icon maker
+        run: |
+          ref="${{ github.event.inputs.kernel_ref }}"
+          git clone -q https://github.com/Scion-Project/scion-kernel.git /tmp/k
+          if [ -n "$ref" ]; then git -C /tmp/k fetch -q origin "$ref" && git -C /tmp/k checkout -q FETCH_HEAD
+          elif [ ! -f /tmp/k/tools/mk-webclips.py ]; then
+            git -C /tmp/k fetch -q origin apps/webclips && git -C /tmp/k checkout -q FETCH_HEAD   # until it is merged
+          fi
+          test -f /tmp/k/tools/mk-webclips.py
+      - name: Build, index, and have apt read it
+        run: repo/test.sh /tmp/k
+      - name: The repository as it would be served
+        run: repo/build.sh /tmp/k out/repo
+      - uses: actions/upload-artifact@v4
+        with:
+          name: scion-repo
+          path: out/repo
+          retention-days: 7
