@@ -147,4 +147,64 @@ refused "an S10's name on an S9's boot loader" G960FXXSFFUB3 "Galaxy S10" starlt
 refused "a Galaxy S10 on TWRP" G973FXXU9FUG1 "Galaxy S10" beyond1lte
 refused "a phone's name and no id" '' "Galaxy S9" starlte
 refused "another phone's device name" G960FXXSFFUB3 "Galaxy S9" beyond1lte
+# scion-install.sh, the verified install (a dry run unless --apply; kernel-update writes BOOT only): the zips made above, and a
+# kernel-update zip (-B), on a pretend phone whose partitions are files of the sizes its manifest allows. The cases in detail are
+# tools/test_scion_install.py's; this is that the script and mkinstaller.sh agree.
+if [ "$FORMAT" = 0 ]; then
+	N=$T/verified
+	newphone() { # fresh partitions; SYSTEM holds the system image, as after a full install
+		rm -rf "$N/dev" "$N/share"; mkdir -p "$N/dev" "$N/share"
+		head -c 4194304 /dev/urandom > "$N/dev/RECOVERY"; head -c 1048576 /dev/urandom > "$N/dev/EFS"; head -c 1048576 /dev/urandom > "$N/dev/USERDATA"
+		head -c 8388608 /dev/zero > "$N/dev/BOOT"
+		dd if=/dev/zero of="$N/dev/SYSTEM" bs=1 count=0 seek=$SYSROOM 2>/dev/null
+		dd if="$T/system.apfs" of="$N/dev/SYSTEM" conv=notrunc 2>/dev/null
+	}
+	vsnap() { for p in RECOVERY EFS USERDATA BOOT; do (cat "$N/dev/$p"; echo "$p") | cksum; done; head -c 1048576 "$N/dev/SYSTEM" | cksum; }
+	install_v() { # ZIP ARGS...: scion-install.sh on the pretend phone (an S9)
+		printf 'ro.boot.bootloader=G960FXXU9FUG1\nro.product.model=SM-G960F\nro.product.device=starlte\n' > "$T/props"
+		z=$1; shift
+		SCION_TEST_FILES=1 SCION_TEST_BYNAME=$N/dev SCION_TEST_GETPROP=$T/bin/getprop SCION_SHARE_DIR=$N/share SCION_LOG_DIR=$N \
+			${SH:-sh} "$HERE/scion-install.sh" --zip "$z" "$@" > "$N/out" 2>&1
+	}
+	"$HERE/mkinstaller.sh" -B -K "$K" -s "$T/system.apfs" -k starlte="$T/kernel-starlte" -k star2lte="$T/kernel-star2lte" \
+		-k crownlte="$T/kernel-crownlte" -o "$T/scion-kernel-update.zip" > "$T/make-ku.log" 2>&1 || { cat "$T/make-ku.log"; fail "mkinstaller.sh -B"; }
+	[ "$(wc -c < "$T/scion-kernel-update.zip")" -lt "$(wc -c < "$T/system.apfs")" ] || fail "the kernel-update zip carries the system image"
+	[ -x "$T/scion-install.sh" ] || [ -x "$(dirname "$Z")/scion-install.sh" ] || fail "mkinstaller.sh did not put scion-install.sh beside the zip"
+	newphone; before=$(vsnap)
+	install_v "$Z" || { cat "$N/out"; fail "scion-install.sh dry run"; }
+	grep -q 'DRY RUN' "$N/out" || fail "no dry run said"; [ "$(vsnap)" = "$before" ] || fail "a dry run wrote"
+	echo "selftest: scion-install.sh: dry run is the default, nothing written"
+	install_v "$T/scion-kernel-update.zip" --apply || { cat "$N/out"; fail "scion-install.sh --apply on the kernel-update zip"; }
+	grep -q '^BOOT starlte ' "$N/dev/BOOT" || fail "kernel update: BOOT does not hold the S9's image"
+	[ "$(vsnap | sed -n 1,3p)" = "$(echo "$before" | sed -n 1,3p)" ] && [ "$(vsnap | sed -n 5p)" = "$(echo "$before" | sed -n 5p)" ] || fail "kernel update wrote more than BOOT"
+	echo "selftest: scion-install.sh --apply, kernel-update zip: BOOT written, RECOVERY EFS USERDATA SYSTEM untouched"
+	newphone; before=$(vsnap)
+	install_v "$Z" --apply --mode full || { cat "$N/out"; fail "scion-install.sh --apply --mode full"; }
+	grep -q '^BOOT starlte ' "$N/dev/BOOT" && head -c "$(wc -c < "$T/system.apfs" | tr -d ' ')" "$N/dev/SYSTEM" | cmp -s - "$T/system.apfs" || fail "full: BOOT and SYSTEM not right"
+	[ "$(vsnap | sed -n 1,3p)" = "$(echo "$before" | sed -n 1,3p)" ] || fail "full install wrote RECOVERY, EFS or USERDATA"
+	echo "selftest: scion-install.sh --apply --mode full: SYSTEM and BOOT written, RECOVERY EFS USERDATA untouched"
+	newphone; before=$(vsnap)
+	install_v "$T/scion-kernel-update.zip" --apply --mode full && fail "--mode full on a zip with no system image"
+	grep -q 'no system image' "$N/out" && [ "$(vsnap)" = "$before" ] || fail "full mode on a kernel-update zip: not refused cleanly"
+	dd if=/dev/zero of="$N/dev/SYSTEM" bs=1 count=64 conv=notrunc 2>/dev/null; before=$(vsnap)
+	install_v "$T/scion-kernel-update.zip" --apply && fail "kernel update on a phone whose SYSTEM is not the image"
+	grep -q 'SYSTEM on this phone is not the iOS system image' "$N/out" && [ "$(vsnap)" = "$before" ] || fail "wrong SYSTEM: not refused cleanly"
+	echo "selftest: scion-install.sh: no system image in the zip, or the wrong SYSTEM on the phone: refused, nothing written"
+	# TWRP's Install cannot flash a kernel-update zip: update-binary does not take its installer.prop
+	run G960FXXU9FUG1 SM-G960F starlte "$T/scion-kernel-update.zip" && fail "update-binary took a kernel-update zip"
+	grep -q 'not one of universal/mkinstaller.sh' "$T/twrp.out" || { cat "$T/twrp.out"; fail "update-binary's refusal"; }
+	untouched; echo "selftest: update-binary refuses a kernel-update zip, nothing written"
+	# -F: the firmware checked against its pinned sums before the build, the sums' hash in installer.prop; a failing check stops it
+	mkdir -p "$K/devices/starlte/tools" "$K/devices/starlte/firmware/wifi"
+	echo "0000000000000000000000000000000000000000000000000000000000000000  wifi.bin" > "$K/devices/starlte/firmware/wifi/SHA256SUMS"
+	printf '#!/bin/sh\n[ "$1" = --check ] && [ ! -f "%s/fw-bad" ]\n' "$T" > "$K/devices/starlte/tools/fetch-firmware.sh"; chmod +x "$K/devices/starlte/tools/fetch-firmware.sh"
+	"$HERE/mkinstaller.sh" -F -B -K "$K" -s "$T/system.apfs" -k starlte="$T/kernel-starlte" -o "$T/fw.zip" > "$T/make-fw.log" 2>&1 || { cat "$T/make-fw.log"; fail "mkinstaller.sh -F"; }
+	grep -q 'starlte: firmware checked against its pinned sums' "$T/make-fw.log" || fail "-F: no word of the firmware"
+	python3 -c "import zipfile,sys; p=zipfile.ZipFile(sys.argv[1]).read('scion/installer.prop').decode(); assert 'FW_STARLTE_SUMS_SHA256=' in p and 'SCION_INSTALLER=3' in p, p" "$T/fw.zip" || fail "-F: the sums' hash is not in installer.prop"
+	touch "$T/fw-bad"
+	"$HERE/mkinstaller.sh" -F -B -K "$K" -s "$T/system.apfs" -k starlte="$T/kernel-starlte" -o "$T/fw2.zip" > "$T/make-fw2.log" 2>&1 && fail "-F built with firmware that fails its check"
+	grep -q "firmware is not complete or not the pinned files" "$T/make-fw2.log" && [ ! -e "$T/fw2.zip" ] || fail "-F: no refusal"
+	rm -f "$T/fw-bad"
+	echo "selftest: mkinstaller.sh -F: firmware checked against its pinned sums; a bad one stops the build"
+fi
 echo "selftest: all passed"

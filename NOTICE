@@ -6,6 +6,10 @@ In this repository:
   scion-blazer, by Anders Madsen (TheAndersMadsen), MIT, imported into Scion's organisation with his permission. scion-blazer is
   itself based on dgigantino/ios-tegu. The plan, its refusals and its tests are written fresh. scion-blazer's tools/gpt_plan.py
   states no licence, so it was read for its design only and none of it is copied.
+- universal/scion-install.sh and tools/test_scion_install.py: written fresh. Their design (hash the images before any write, write BOOT only
+  for a kernel update, never touch RECOVERY, keep a RAM copy of BOOT and put it back on a bad read-back) follows the installer of
+  danstronics/ios-s9plus-exynos (an S9+ port based on Scion), as summarised in scion-kernel's docs/star2lte-absorb.md. None of its code
+  is used, and its hashes and offsets are its own build's; this one reads its facts from the installer.prop of the user's own build.
 - Everything else here is under this repository's LICENSE (MIT).
 
 Fetched or built on the user's machine, never committed (their own licences):

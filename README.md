@@ -94,6 +94,49 @@ the script refuses anything but the 20F66 IPSW. The zip that comes out installs,
   `s9-installer`), but nobody has timed it on a desk machine yet. arm64 Linux has no theos toolchain here.
 - **Windows**: run it in WSL (Ubuntu 24.04), with `--work` in WSL's own filesystem (`~/...`), not under `/mnt/c`.
 
+## Verified install from TWRP's terminal (`universal/scion-install.sh`)
+
+A second way in beside `update-binary` (which TWRP's Install runs, and which is unchanged). It is for the person who wants to see what
+will happen first, and for updating the kernel without touching the system image. It runs in TWRP's terminal (`adb shell`):
+
+```sh
+adb push out/scion-exynos9810-installer.zip /sdcard/ && adb push out/scion-install.sh /tmp/     # scion-install.sh is copied beside the zip
+adb shell sh /tmp/scion-install.sh --zip /sdcard/scion-exynos9810-installer.zip --zip-sha256 $(cut -d' ' -f1 out/scion-exynos9810-installer.zip.sha256)
+adb shell sh /tmp/scion-install.sh --zip /sdcard/scion-exynos9810-installer.zip --apply          # after the dry run looks right
+```
+
+- **A dry run is the default.** Without `--apply` it does every check, prints the plan, and writes nothing. `--apply` writes.
+- **`--mode kernel-update`** (the default) writes BOOT and nothing else. SYSTEM is read and its SHA-256 compared with the image the
+  zip was made with: a phone whose SYSTEM is something else (Android, an older build) is refused, with what to do. BOOT is copied to
+  RAM first and put back if what was written does not read back right.
+- **`--mode full`** writes SYSTEM (the iOS system image) and then BOOT, after checking both images in the zip by SHA-256.
+  SYSTEM has no copy to go back to: take your TWRP backup first.
+- **Only BOOT, and SYSTEM in full mode, are ever written.** EFS, SEC_EFS, CPEFS, RADIO, CP_DEBUG, RECOVERY, PARAM, UP_PARAM,
+  PERSISTENT, STEADY, BOTA0/1, DTB, DTBO, KEYSTORAGE, NAD_REFER, RPMB and TIMA are refused by name and by the block device their names
+  resolve to. USERDATA is never written by this script (a zip made with `-U` and `update-binary` formats it). **RECOVERY is TWRP: it is
+  never written**, and its SHA-256, and EFS's, are taken before and after, a change being reported as a failure.
+- **A manifest for each phone** (`sh scion-install.sh --print-manifest starlte`; starlte, star2lte, crownlte): the partitions that
+  must exist, each a different block device, the system partition's name, and bounds on BOOT's and SYSTEM's sizes. **The bounds are
+  sanity limits, not measurements** (4 MiB to 256 MiB for BOOT, 1 GiB to 16 GiB for SYSTEM): no exact sizes are recorded yet. Every
+  dry run's log prints the sizes it found, so that the first logs from each phone can fill them in.
+- **A phone that is not the zip's**, a boot image or system image damaged in the zip (`--zip-sha256` checks the whole zip against the
+  `.sha256` file), a table that is not the manifest's: refused before the first write, with what to do. The boot image's hash covers the
+  small root and the S9's firmware in it (the firmware is fetched at build time against pinned sums: `mkinstaller.sh -F` also checks
+  them, and records the hash of the sums).
+- **A log**, `/tmp/scion-install-DATE.log` (and a copy in `/sdcard` when that is writable; `--log FILE`): the phone's ids, the
+  partition table it saw, every hash compared, the decision. It holds no identity of yours: send it with a report.
+- `universal/mkinstaller.sh -B` makes a **kernel-update zip**: the boot images and no system image (tens of MB, not 2.5 GB); `-s` still
+  gives the system image whose hash `--mode kernel-update` expects on the phone. `update-binary` refuses such a zip, so TWRP's Install
+  cannot flash one by mistake.
+
+**Nothing here has been run on a phone.** `python3 -I tools/test_scion_install.py` runs the script on a computer against fake partition
+files (`SHELLS="sh,mksh,busybox sh"` for TWRP's shell as well) and proves: the wrong phone is refused; a protected partition (a zip that
+names EFS, a BOOT that is RECOVERY's device under another name, a missing or doubled partition) is refused; a hash mismatch is refused
+before any write; in kernel-update mode only BOOT changes; a dry run changes nothing; a BOOT that reads back wrong is put back.
+`universal/selftest.sh` checks the script against zips `mkinstaller.sh` really makes. The design (the hashes before any write, BOOT only
+for kernel updates, RECOVERY untouched, RAM copy and rollback) is that of danstronics/ios-s9plus-exynos's installer, as scion-kernel's
+`docs/star2lte-absorb.md` summarises it; nothing of its code or its hashes is used.
+
 ## Dual-boot partition plan, a dry run (`tools/gpt-plan.py`)
 
 For a Galaxy S9 that is to keep Android beside iOS: reads a dump of LUN 0's partition table (`--image`, or `--head` and `--tail` made
