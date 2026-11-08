@@ -21,6 +21,9 @@
 #   --skip-hash             skip the IPSW's SHA-256 (the size and the BuildManifest are still checked)
 #   --no-sileo              leave Sileo and the Procursus bootstrap out of the system image (they are fetched from
 #                           their public releases, pinned by SHA-256, by the kernel repository's tools/mk-jb.sh)
+#   --webclips              web apps on the home screen from the first boot (off by default): Wikipedia, Mastodon,
+#                           Element, OpenStreetMap and a few more, as the web clips Safari's "Add to Home Screen" makes
+#                           (the kernel repository's WEBCLIPS=1, tools/mk-webclips.py). Needs a kernel revision that has it.
 #   --open                  no IPSW at all: the placeholder loader (no Apple data), a stand-in system image and the
 #                           open small root. The zip installs, but iOS does not start: what CI runs.
 #   -- ARGS...              extra boot-arguments, over the defaults (as for the mkinstaller.sh scripts)
@@ -46,11 +49,11 @@ IPSW_SHA256=c1091c401f67e3aa7cdfeb2cc19e6c79be3c957aae4e097a019e9ccea07d52f2
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 START=$(date +%s)
-IPSW='' DEVICES=all SILEO=1 WORK=$PWD/scion-build OUTDIR=$PWD/out JOBS='' SKIP_HASH=0 OPEN=0 KREF=$KERNEL_REV
+IPSW='' DEVICES=all SILEO=1 WEBCLIPS=0 WORK=$PWD/scion-build OUTDIR=$PWD/out JOBS='' SKIP_HASH=0 OPEN=0 KREF=$KERNEL_REV
 UBLOCKS=()
 EXTRA=()
 
-usage() { sed -n 2,31p "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n 2,34p "$0" | sed 's/^# \{0,1\}//'; }
 die() { echo "build-installer: $*" >&2; exit 1; }
 step() { printf '\n== %s (%s)\n' "$1" "$(elapsed)"; }
 elapsed() { local s=$(($(date +%s) - START)); printf '%dh%02dm%02ds' $((s / 3600)) $((s / 60 % 60)) $((s % 60)); }
@@ -74,6 +77,7 @@ while [ $# -gt 0 ]; do
 	--jobs=*) JOBS=${1#*=}; shift ;;
 	--skip-hash) SKIP_HASH=1; shift ;;
 	--no-sileo) SILEO=0; shift ;;
+	--webclips) WEBCLIPS=1; shift ;;
 	--open) OPEN=1; shift ;;
 	-h | --help) usage; exit 0 ;;
 	--) shift; EXTRA=("$@"); break ;;
@@ -107,6 +111,7 @@ JOBS=${JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev
 case "$JOBS" in '' | *[!0-9]*) die "--jobs $JOBS: a number" ;; esac
 if [ "$OPEN" = 1 ]; then
 	[ -z "$IPSW" ] || die "--open builds without an IPSW: leave out --ipsw"
+	[ "$WEBCLIPS" = 0 ] || die "--webclips: --open makes no system image to put them in"
 else
 	[ -n "$IPSW" ] || { usage >&2; die "--ipsw PATH: your own $IPSW_NAME (nothing here downloads it); --open builds without one"; }
 	[ -f "$IPSW" ] || die "--ipsw $IPSW: no such file"
@@ -392,7 +397,11 @@ if [ "$OPEN" = 0 ]; then
 		rm -f userland/system.apfs
 	fi
 	step "The small root and the iOS system image (userland/build.sh, with Mesa the first time: 10 to 30 minutes)"
-	if ! env ${S9_USERLAND[@]+"${S9_USERLAND[@]}"} "JB_KEPT_ONLY=$([ "$SILEO" = 1 ] && echo 1)" BISON3="$BISON3" bash -c 'source ./xnu-env.sh && export PATH="$BISON3:$PATH" && cd userland && GL=1 NO_AIR=1 REST=1 ALONE=1 RC=rc.launchd bash build.sh' > "$LOGS/userland.log" 2>&1; then
+	if [ "$WEBCLIPS" = 1 ]; then
+		# a kernel revision without it would ignore the variable, and the person would look for icons that are not there
+		grep -q 'WEBCLIPS' userland/build.sh || die "--webclips: this kernel revision (${KREF:0:12}) has no WEBCLIPS in userland/build.sh; give --kernel-ref a revision that has"
+	fi
+	if ! env ${S9_USERLAND[@]+"${S9_USERLAND[@]}"} "JB_KEPT_ONLY=$([ "$SILEO" = 1 ] && echo 1)" "WEBCLIPS=$([ "$WEBCLIPS" = 1 ] && echo 1)" BISON3="$BISON3" bash -c 'source ./xnu-env.sh && export PATH="$BISON3:$PATH" && cd userland && GL=1 NO_AIR=1 REST=1 ALONE=1 RC=rc.launchd bash build.sh' > "$LOGS/userland.log" 2>&1; then
 		tail -40 "$LOGS/userland.log" >&2
 		M=xnu-deps/build/mesa
 		for f in $M/meson-setup.log $M/ninja.log; do
