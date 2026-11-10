@@ -1,0 +1,61 @@
+# A from-scratch build as a new user on Linux would run it, up to the last step that needs no IPSW:
+# build-installer.sh --open for the default phone (starlte), then tools/mk-mesa.sh, the Mesa build that userland/build.sh runs
+# (GL=1) in the step build-installer.sh runs with your IPSW and which --open leaves out.
+#
+# Nothing of Apple's is an input or an output: no IPSW, and the artifact is logs only. (The iPhoneOS SDK and the
+# toolchain are theos's public ones, fetched as in kernel CI.) Run by hand, on a branch.
+name: fresh-build
+
+on:
+  workflow_dispatch:
+    inputs:
+      kernel_ref:
+        description: Scion-Project/scion-kernel commit or branch (empty for the one build-installer.sh pins)
+        default: ""
+      device:
+        description: Phone to build for
+        default: starlte
+
+jobs:
+  fresh:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        kref: [pinned, main]
+    env:
+      W: /mnt/w
+    steps:
+      - uses: actions/checkout@v4
+      - name: Work space on /mnt
+        run: sudo mkdir -p "$W" && sudo chown -R "$(id -u):$(id -g)" "$W" && df -h / /mnt
+      - name: Packages (what build-installer.sh's check asks for on Linux, no ldid)
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends build-essential git curl clang lld python3 python3-venv \
+            perl xz-utils flex bison m4 autoconf automake libtool-bin uuid-dev llvm meson ninja-build pkg-config 7zip
+      - name: build-installer.sh --open
+        env:
+          KREF: ${{ (matrix.kref == 'main' && 'main') || inputs.kernel_ref }}
+        run: |
+          date +%s > /tmp/t0
+          ./build-installer.sh --open --device "${{ inputs.device || 'starlte' }}" --work "$W" --out "$W/out" ${KREF:+--kernel-ref "$KREF"}
+          echo "open build: $(( $(date +%s) - $(cat /tmp/t0) )) s"
+      - name: Mesa (tools/mk-mesa.sh, which userland/build.sh runs for GL=1; the rest of that step needs the IPSW's system files)
+        run: |
+          cd "$W/scion-kernel"
+          date +%s > /tmp/t1
+          export THEOS=$W/theos   # as build-installer.sh leaves it for its steps
+          bash -x tools/mk-mesa.sh > "$W/logs/mesa.log" 2>&1 || { tail -60 "$W/logs/mesa.log"; exit 1; }
+          echo "mesa: $(( $(date +%s) - $(cat /tmp/t1) )) s"
+          tail -5 "$W/logs/mesa.log"
+          ls -la xnu-deps/build/mesa/out/
+      - name: Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fresh-build-logs-${{ matrix.kref }}
+          path: /mnt/w/logs
+          retention-days: 7
+          if-no-files-found: ignore
