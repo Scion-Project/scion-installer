@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT-0
 """Build the Scion repository's packages from the kernel repository's web-clip manifest.
 
 usage: repo/mkdebs.py --kernel DIR --out DIR [--version X.Y.Z]

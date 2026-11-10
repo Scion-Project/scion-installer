@@ -1,4 +1,5 @@
 #!/sbin/sh
+# SPDX-License-Identifier: MIT-0
 # Scion's installer for the Exynos 9810 Galaxys (the S9, the S9+, the Note9), run by TWRP. It finds out which phone this
 # is, refuses any other, and writes that phone's boot image to BOOT and the iOS system image to the partition
 # installer.prop names (SYSTEM), each read back and checked by its SHA-256. A zip made with -U and still named

@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: MIT-0 -->
 # scion-installer
 
 Installers for Scion's phones. Each one is a single zip that a phone's recovery flashes: Scion's boot image and the iOS

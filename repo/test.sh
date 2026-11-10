@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: MIT-0
 # The Sileo repository, end to end, on Linux with nothing to install but dpkg and apt (CI runs it):
 #   repo/test.sh KERNEL_CHECKOUT        (a Scion-Project/scion-kernel with the web clips: userland/webclips, tools/mk-webclips.py)
 # It builds the packages twice and wants the same bytes, indexes them, has apt itself read the index and plan the
