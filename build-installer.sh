@@ -36,11 +36,14 @@
 # published. Nothing of Apple's is in this repository or in the kernel's; the project ships none and downloads none.
 set -euo pipefail
 
-# The kernel repository's commit this script builds. Moved on 8 Nov to the kernel's main that has the web clips (--webclips needs
-# WEBCLIPS=1 in userland/build.sh); that revision builds in all six kernel configurations, but the installer has not been run end to end against it. Its devices/manifest.conf pins the device
-# repositories (scion-starlte, scion-star2lte, scion-crownlte); tools/hakios-device.py sync checks them out there.
+# The kernel repository's commit this script builds: main of 10 Nov (13c4fce), which has the web clips (--webclips needs
+# WEBCLIPS=1 in userland/build.sh) and the Mesa patches that apply in order (the revision before it stopped userland/build.sh on
+# Linux: turnip-darwin.patch's hunk on Mesa's meson.build did not apply after panfrost-darwin.patch). Checked: a from-scratch
+# --open build on Ubuntu 24.04 with Mesa built on top (the fresh-build workflow), and a full build from an IPSW on macOS.
+# Its devices/manifest.conf pins the device repositories (scion-starlte, scion-star2lte, scion-crownlte); tools/hakios-device.py
+# sync checks them out there.
 KERNEL_REPO=https://github.com/Scion-Project/scion-kernel.git
-KERNEL_REV=51b36ac6fb0323ad5ecd552e82963113a544ae60
+KERNEL_REV=13c4fce84d7cb8e3ab4d9b4df45ad71bfd75987b
 
 # The one IPSW the build is made for (sysimage/unpack.sh and select-system.py know only this one). These are facts
 # about Apple's file, published with it; the file itself is never fetched here.
