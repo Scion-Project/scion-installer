@@ -1,0 +1,56 @@
+# A from-scratch build as a new user on Linux would run it, up to the last step that needs no IPSW:
+# build-installer.sh --open for the default phone (starlte), then userland/build.sh's Mesa step (GL=1) over it,
+# which is the step build-installer.sh runs with your IPSW and which --open leaves out.
+#
+# Nothing of Apple's is an input or an output: no IPSW, and the artifact is logs only. (The iPhoneOS SDK and the
+# toolchain are theos's public ones, fetched as in kernel CI.) Run by hand, on a branch.
+name: fresh-build
+
+on:
+  workflow_dispatch:
+    inputs:
+      kernel_ref:
+        description: Scion-Project/scion-kernel commit or branch (empty for the one build-installer.sh pins)
+        default: ""
+      device:
+        description: Phone to build for
+        default: starlte
+
+jobs:
+  fresh:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    env:
+      W: /mnt/w
+    steps:
+      - uses: actions/checkout@v4
+      - name: Work space on /mnt
+        run: sudo mkdir -p "$W" && sudo chown -R "$(id -u):$(id -g)" "$W" && df -h / /mnt
+      - name: Packages (what build-installer.sh's check asks for on Linux, no ldid)
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends build-essential git curl clang lld python3 python3-venv \
+            perl xz-utils flex bison m4 autoconf automake libtool-bin uuid-dev llvm meson ninja-build pkg-config 7zip
+      - name: build-installer.sh --open
+        env:
+          KREF: ${{ inputs.kernel_ref }}
+        run: |
+          date +%s > /tmp/t0
+          ./build-installer.sh --open --device "${{ inputs.device }}" --work "$W" --out "$W/out" ${KREF:+--kernel-ref "$KREF"}
+          echo "open build: $(( $(date +%s) - $(cat /tmp/t0) )) s"
+      - name: Mesa and the small root with GL (userland/build.sh, as build-installer.sh runs it with an IPSW, minus the system image)
+        run: |
+          cd "$W/scion-kernel"
+          date +%s > /tmp/t1
+          bash -c 'source ./xnu-env.sh && cd userland && GL=1 NO_AIR=1 REST=1 ALONE=1 RC=rc.launchd BT=1 DEVICE=starlte bash build.sh' > "$W/logs/userland-gl.log" 2>&1 || { tail -60 "$W/logs/userland-gl.log"; for f in xnu-deps/build/mesa/meson-setup.log xnu-deps/build/mesa/ninja.log; do [ -f $f ] && grep -E -A8 -m3 'FAILED|ERROR' $f; done; exit 1; }
+          echo "mesa+root: $(( $(date +%s) - $(cat /tmp/t1) )) s"
+          tail -5 "$W/logs/userland-gl.log"
+          ls -la userland/root.apfs xnu-deps/build/mesa/out/libOSMesa.8.dylib
+      - name: Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fresh-build-logs
+          path: /mnt/w/logs
+          retention-days: 7
+          if-no-files-found: ignore
