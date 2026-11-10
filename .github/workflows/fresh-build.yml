@@ -1,6 +1,6 @@
 # A from-scratch build as a new user on Linux would run it, up to the last step that needs no IPSW:
-# build-installer.sh --open for the default phone (starlte), then userland/build.sh's Mesa step (GL=1) over it,
-# which is the step build-installer.sh runs with your IPSW and which --open leaves out.
+# build-installer.sh --open for the default phone (starlte), then tools/mk-mesa.sh, the Mesa build that userland/build.sh runs
+# (GL=1) in the step build-installer.sh runs with your IPSW and which --open leaves out.
 #
 # Nothing of Apple's is an input or an output: no IPSW, and the artifact is logs only. (The iPhoneOS SDK and the
 # toolchain are theos's public ones, fetched as in kernel CI.) Run by hand, on a branch.
@@ -44,14 +44,14 @@ jobs:
           date +%s > /tmp/t0
           ./build-installer.sh --open --device "${{ inputs.device || 'starlte' }}" --work "$W" --out "$W/out" ${KREF:+--kernel-ref "$KREF"}
           echo "open build: $(( $(date +%s) - $(cat /tmp/t0) )) s"
-      - name: Mesa and the small root with GL (userland/build.sh, as build-installer.sh runs it with an IPSW, minus the system image)
+      - name: Mesa (tools/mk-mesa.sh, which userland/build.sh runs for GL=1; the rest of that step needs the IPSW's system files)
         run: |
           cd "$W/scion-kernel"
           date +%s > /tmp/t1
-          bash -c 'source ./xnu-env.sh && cd userland && GL=1 NO_AIR=1 REST=1 ALONE=1 RC=rc.launchd BT=1 DEVICE=starlte bash build.sh' > "$W/logs/userland-gl.log" 2>&1 || { tail -60 "$W/logs/userland-gl.log"; for f in xnu-deps/build/mesa/meson-setup.log xnu-deps/build/mesa/ninja.log; do [ -f $f ] && grep -E -A8 -m3 'FAILED|ERROR' $f; done; exit 1; }
-          echo "mesa+root: $(( $(date +%s) - $(cat /tmp/t1) )) s"
-          tail -5 "$W/logs/userland-gl.log"
-          ls -la userland/root.apfs xnu-deps/build/mesa/out/libOSMesa.8.dylib
+          tools/mk-mesa.sh > "$W/logs/mesa.log" 2>&1 || { tail -60 "$W/logs/mesa.log"; exit 1; }
+          echo "mesa: $(( $(date +%s) - $(cat /tmp/t1) )) s"
+          tail -5 "$W/logs/mesa.log"
+          ls -la xnu-deps/build/mesa/out/
       - name: Logs
         if: always()
         uses: actions/upload-artifact@v4
