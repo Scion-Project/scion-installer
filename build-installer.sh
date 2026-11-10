@@ -225,6 +225,11 @@ case $(ls -l "$_pc" | cut -c1-10) in
 *) rm -f "$_pc"; die "$WORK does not keep Unix permissions (WSL's /mnt/c, or NTFS/exFAT?). Build on a native filesystem, e.g. --work ~/scion-build" ;;
 esac
 
+# ldid is not needed: without it userland/build.sh says "no ldid: X is unsigned" for a few test programs and goes on
+if [ "$OPEN" = 0 ] && ! have ldid; then
+	echo "build-installer: no ldid: a few test programs (passcoded, keychain_test, battery_test, record_test, HakiosTriangle) are left unsigned, and userland/build.sh says so;" >&2
+	echo "  the build goes on. Without it, passcoded cannot change the passcode and the keychain refuses keychain_test. To sign them: $([ "$HOST" = macos ] && echo "brew install ldid" || echo "sudo apt-get install ldid")" >&2
+fi
 echo "build-installer: $HOST, $JOBS jobs, ${SEVENZ:-no 7-Zip (--open)}, $free_gb GB free at $WORK"
 echo "build-installer: for $DEVLIST$([ ${#UARGS[@]} = 0 ] || echo ", formats USERDATA (${UARGS[*]})")"
 
