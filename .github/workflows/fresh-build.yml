@@ -7,6 +7,8 @@
 name: fresh-build
 
 on:
+  push:
+    branches: [ci/fresh-build-mesa]
   workflow_dispatch:
     inputs:
       kernel_ref:
@@ -20,6 +22,10 @@ jobs:
   fresh:
     runs-on: ubuntu-24.04
     timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        kref: [pinned, main]
     env:
       W: /mnt/w
     steps:
@@ -33,10 +39,10 @@ jobs:
             perl xz-utils flex bison m4 autoconf automake libtool-bin uuid-dev llvm meson ninja-build pkg-config 7zip
       - name: build-installer.sh --open
         env:
-          KREF: ${{ inputs.kernel_ref }}
+          KREF: ${{ (matrix.kref == 'main' && 'main') || inputs.kernel_ref }}
         run: |
           date +%s > /tmp/t0
-          ./build-installer.sh --open --device "${{ inputs.device }}" --work "$W" --out "$W/out" ${KREF:+--kernel-ref "$KREF"}
+          ./build-installer.sh --open --device "${{ inputs.device || 'starlte' }}" --work "$W" --out "$W/out" ${KREF:+--kernel-ref "$KREF"}
           echo "open build: $(( $(date +%s) - $(cat /tmp/t0) )) s"
       - name: Mesa and the small root with GL (userland/build.sh, as build-installer.sh runs it with an IPSW, minus the system image)
         run: |
@@ -50,7 +56,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: fresh-build-logs
+          name: fresh-build-logs-${{ matrix.kref }}
           path: /mnt/w/logs
           retention-days: 7
           if-no-files-found: ignore
