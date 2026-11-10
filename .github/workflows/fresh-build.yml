@@ -48,7 +48,8 @@ jobs:
         run: |
           cd "$W/scion-kernel"
           date +%s > /tmp/t1
-          tools/mk-mesa.sh > "$W/logs/mesa.log" 2>&1 || { tail -60 "$W/logs/mesa.log"; exit 1; }
+          export THEOS=$W/theos   # as build-installer.sh leaves it for its steps
+          bash -x tools/mk-mesa.sh > "$W/logs/mesa.log" 2>&1 || { tail -60 "$W/logs/mesa.log"; exit 1; }
           echo "mesa: $(( $(date +%s) - $(cat /tmp/t1) )) s"
           tail -5 "$W/logs/mesa.log"
           ls -la xnu-deps/build/mesa/out/
