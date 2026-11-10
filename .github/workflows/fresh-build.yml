@@ -7,8 +7,6 @@
 name: fresh-build
 
 on:
-  push:
-    branches: [ci/fresh-build-mesa]
   workflow_dispatch:
     inputs:
       kernel_ref:
