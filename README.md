@@ -50,6 +50,9 @@ Options:
   jobs and the firmware of the S9's repository). By hand, give the same: `-a "starlte=rtc_pmic= shub=6 abox_mic=1 bt=7"` for
   `universal/mkinstaller.sh`.
 - `--work DIR`, `--out DIR`, `--jobs N`, `--kernel-ref REF` (another kernel commit, for developers), `--skip-hash`.
+- `--kernel DEVICE=FILE`: a kernel someone already built (`make kernel`'s `hakios-kernel`) for that phone, instead of
+  building it here; it has to come from the same kernel revision as `--kernel-ref`, which the binary cannot show, so
+  that part is the giver's word. Repeatable.
 
 Run it again after a failure and it picks up where it stopped. The clone, the unpacked IPSW, XNU's tree and Mesa are
 kept in `scion-build`. To start clean, delete `scion-build`.
@@ -64,7 +67,7 @@ What it takes:
 | Disk | 20 GB free besides the IPSW: `scion-build` ends at about 10 GB (15 at most while it runs), the zip is 2.4 GB | the same, plus 1.5 GB for theos |
 | Time, first run | 20 minutes on a Mac mini M1 that other builds were also using: about 1 to unpack, 5 for the kernel and its dependencies, 8 for Mesa, 4 for the images | not timed with an IPSW yet; the `--open` build (no Mesa, no system image) takes 6 minutes on GitHub's runners |
 
-`--format-userdata` also needs `newfs_hfs` (part of macOS) or `mkfs.hfsplus` (Linux: `hfsprogs`).
+`--format-userdata` also needs `newfs_hfs` (part of macOS) or `mkfs.hfsplus` (Linux: `hfsprogs`). On Debian it lands in `/usr/sbin`, off a user's PATH; the script adds `/usr/sbin` and `/sbin` itself.
 
 **What comes out is yours alone.** The zip carries iOS's own files from your IPSW, and the loader carries your iPhone's
 identity. Do not publish it, upload it or commit it. Install it as **Install** below says.
