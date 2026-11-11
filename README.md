@@ -53,6 +53,9 @@ Options:
 - `--kernel DEVICE=FILE`: a kernel someone already built (`make kernel`'s `hakios-kernel`) for that phone, instead of
   building it here; it has to come from the same kernel revision as `--kernel-ref`, which the binary cannot show, so
   that part is the giver's word. Repeatable.
+- `--prebuilt-kernel`: the kernels CI built from the pinned revision, from this repository's release
+  `kernels-<revision>` (the `kernels` workflow), each checked against the SHA-256 pinned in `build-installer.sh`, instead
+  of building them here. Only for the pinned revision; when none are published for it yet, the script says so.
 
 Run it again after a failure and it picks up where it stopped. The clone, the unpacked IPSW, XNU's tree and Mesa are
 kept in `scion-build`. To start clean, delete `scion-build`.

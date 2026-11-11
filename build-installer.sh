@@ -20,6 +20,9 @@
 #   --jobs N                parallel jobs for the kernels (default: the number of CPUs)
 #   --kernel DEVICE=FILE    use a kernel someone already built (make kernel's hakios-kernel) for that phone instead of
 #                           building it here. It must come from the same kernel revision as --kernel-ref. Repeatable.
+#   --prebuilt-kernel       the kernels CI built from the pinned revision (this repository's release kernels-<its first
+#                           12 hex>, the kernels workflow), each checked against the SHA-256 pinned below, instead of
+#                           building them here. Only for the pinned revision.
 #   --skip-hash             skip the IPSW's SHA-256 (the size and the BuildManifest are still checked)
 #   --no-sileo              leave Sileo and the Procursus bootstrap out of the system image (they are fetched from
 #                           their public releases, pinned by SHA-256, by the kernel repository's tools/mk-jb.sh)
@@ -46,6 +49,14 @@ set -euo pipefail
 # sync checks them out there.
 KERNEL_REPO=https://github.com/Scion-Project/scion-kernel.git
 KERNEL_REV=13c4fce84d7cb8e3ab4d9b4df45ad71bfd75987b
+# The kernels the kernels workflow built from KERNEL_REV and published as this repository's release kernels-<its first 12
+# hex>, for --prebuilt-kernel. They move with KERNEL_REV: run the workflow for the new revision, then pin what it printed.
+# Empty: none published for this revision yet.
+KSUM_starlte=
+KSUM_star2lte=
+KSUM_crownlte=
+KREL=https://github.com/Scion-Project/scion-installer/releases/download
+ksum() { case $1 in starlte) echo "$KSUM_starlte" ;; star2lte) echo "$KSUM_star2lte" ;; crownlte) echo "$KSUM_crownlte" ;; esac; }
 
 # The one IPSW the build is made for (sysimage/unpack.sh and select-system.py know only this one). These are facts
 # about Apple's file, published with it; the file itself is never fetched here.
@@ -59,12 +70,12 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 # the phone boots the kernel and stays at the logo. So whatever this build writes is written 022.
 umask 022
 START=$(date +%s)
-IPSW='' DEVICES=all SILEO=1 WEBCLIPS=0 WORK=$PWD/scion-build OUTDIR=$PWD/out JOBS='' SKIP_HASH=0 OPEN=0 KREF=$KERNEL_REV
+IPSW='' DEVICES=all SILEO=1 WEBCLIPS=0 WORK=$PWD/scion-build OUTDIR=$PWD/out JOBS='' SKIP_HASH=0 OPEN=0 PREBUILT=0 KREF=$KERNEL_REV
 UBLOCKS=()
 KFILES=()
 EXTRA=()
 
-usage() { sed -n 2,36p "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n 2,39p "$0" | sed 's/^# \{0,1\}//'; }
 die() { echo "build-installer: $*" >&2; exit 1; }
 step() { printf '\n== %s (%s)\n' "$1" "$(elapsed)"; }
 elapsed() { local s=$(($(date +%s) - START)); printf '%dh%02dm%02ds' $((s / 3600)) $((s / 60 % 60)) $((s % 60)); }
@@ -85,6 +96,7 @@ while [ $# -gt 0 ]; do
 	--kernel-ref) KREF=${2:?--kernel-ref REF}; shift 2 ;;
 	--kernel-ref=*) KREF=${1#*=}; shift ;;
 	--jobs) JOBS=${2:?--jobs N}; shift 2 ;;
+	--prebuilt-kernel) PREBUILT=1; shift ;;
 	--kernel) KFILES+=("${2:?--kernel DEVICE=FILE}"); shift 2 ;;
 	--kernel=*) KFILES+=("${1#*=}"); shift ;;
 	--jobs=*) JOBS=${1#*=}; shift ;;
@@ -130,6 +142,13 @@ for k in ${KFILES[@]+"${KFILES[@]}"}; do
 	KPRE+=("$d=$(abs "$f")")
 done
 kpre() { local e; for e in ${KPRE[@]+"${KPRE[@]}"}; do [ "${e%%=*}" != "$1" ] || { echo "${e#*=}"; return; }; done; }
+if [ "$PREBUILT" = 1 ]; then
+	[ "$KREF" = "$KERNEL_REV" ] || die "--prebuilt-kernel: only for the pinned revision ${KERNEL_REV:0:12}, whose kernels' SHA-256s are pinned here; with --kernel-ref, build them, or give one with --kernel"
+	for d in $DEVLIST; do
+		[ -n "$(kpre "$d")" ] || [ -n "$(ksum "$d")" ] ||
+			die "--prebuilt-kernel: no $d kernel published for ${KERNEL_REV:0:12} yet (KSUM_$d is empty): build it here, without the option"
+	done
+fi
 JOBS=${JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)}
 case "$JOBS" in '' | *[!0-9]*) die "--jobs $JOBS: a number" ;; esac
 if [ "$OPEN" = 1 ]; then
@@ -175,6 +194,7 @@ fi
 export PATH
 PROBLEMS=()
 have() { command -v "$1" >/dev/null 2>&1; }
+sha256() { if have sha256sum; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d' ' -f1; }
 missing() { PROBLEMS+=("$1|$2"); }
 if [ "$HOST" = macos ]; then
 	B="brew install"
@@ -385,8 +405,17 @@ sed -n 1p "$LOGS/identity.log" | sed 's/^/  /'
 KDIR=$WORK/kernels && mkdir -p "$KDIR"
 for d in $DEVLIST; do
 	pre=$(kpre "$d")
+	if [ -z "$pre" ] && [ "$PREBUILT" = 1 ]; then
+		url=$KREL/kernels-${KERNEL_REV:0:12}/kernel-$d
+		step "The $d kernel: CI's, $url"
+		curl -L --fail --retry 3 -s -o "$KDIR/prebuilt-$d" "$url" || die "--prebuilt-kernel: $url could not be fetched"
+		want=$(ksum "$d") got=$(sha256 "$KDIR/prebuilt-$d")
+		[ "$got" = "$want" ] || { rm -f "$KDIR/prebuilt-$d"; die "--prebuilt-kernel: $url has SHA-256 $got, not the pinned $want: not the kernel CI published"; }
+		echo "  SHA-256 $got: the one pinned"
+		pre=$KDIR/prebuilt-$d
+	fi
 	if [ -n "$pre" ]; then
-		step "The $d kernel: the prebuilt one given (--kernel), not built here"
+		step "The $d kernel: prebuilt, not built here"
 		run "defconfig-$d.log" make "${d}_defconfig"
 		cp "$pre" "$KDIR/kernel-$d"
 		# the binary does not say which kernel revision it was built from (hakios_kver comes in as a boot-argument), so
@@ -397,8 +426,7 @@ for d in $DEVLIST; do
 		if [ "$d" = starlte ] && ! grep -aq 'lx: brcmfmac 2:' "$KDIR/kernel-$d"; then
 			echo "  build-installer: $pre has no Wi-Fi driver in it (brcmfmac.o was not linked when it was built)" >&2
 		fi
-		if have sha256sum; then ks=$(sha256sum "$KDIR/kernel-$d"); else ks=$(shasum -a 256 "$KDIR/kernel-$d"); fi
-		echo "  $KDIR/kernel-$d: $(wc -c < "$KDIR/kernel-$d" | tr -d ' ') bytes, SHA-256 ${ks%% *}"
+		echo "  $KDIR/kernel-$d: $(wc -c < "$KDIR/kernel-$d" | tr -d ' ') bytes, SHA-256 $(sha256 "$KDIR/kernel-$d")"
 		continue
 	fi
 	step "The $d kernel (make ${d}_defconfig && make kernel; the first takes longest: XNU's tree and its dependencies)"

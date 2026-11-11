@@ -1,0 +1,83 @@
+# The phones' kernels for one kernel revision, built here and published as this repository's release
+# kernels-<first 12 hex of the revision>, for build-installer.sh --prebuilt-kernel.
+#
+# The kernels are what build-installer.sh --open builds (make <phone>_defconfig && make kernel): the kernel does not
+# depend on the IPSW, so the --open build's are the same as an IPSW build's. Nothing of Apple's goes in or out: no IPSW,
+# and the theos iPhoneOS SDK and toolchain are fetched as in kernel CI, never published. What is published is XNU
+# (APSL 2.0, Apple's open source) with Scion's changes and drivers, the Wi-Fi drivers' ISC / BSD code among them; the
+# source of each is Scion-Project/scion-kernel at the revision in the release's name and the fork its profile pins.
+#
+# A release is never replaced: its SHA-256s are pinned in build-installer.sh. For a new revision, run this with it, then
+# put the printed KSUM_ lines and the new KERNEL_REV in build-installer.sh together.
+name: kernels
+
+on:
+  workflow_dispatch:
+    inputs:
+      kernel_ref:
+        description: Scion-Project/scion-kernel commit or branch (empty for the one build-installer.sh pins)
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: kernels-${{ inputs.kernel_ref || 'pinned' }}
+
+jobs:
+  kernels:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    env:
+      W: /mnt/w
+    steps:
+      - uses: actions/checkout@v4
+      - name: Work space on /mnt
+        run: sudo mkdir -p "$W" && sudo chown -R "$(id -u):$(id -g)" "$W" && df -h / /mnt
+      - name: Packages (what build-installer.sh's check asks for on Linux, no ldid)
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends build-essential git curl clang lld python3 python3-venv \
+            perl xz-utils flex bison m4 autoconf automake libtool-bin uuid-dev llvm meson ninja-build pkg-config 7zip
+      - name: build-installer.sh --open, all three phones
+        env:
+          KREF: ${{ inputs.kernel_ref }}
+        run: ./build-installer.sh --open --device all --work "$W" --out "$W/out" ${KREF:+--kernel-ref "$KREF"}
+      - name: Collect the kernels
+        id: collect
+        run: |
+          REV=$(git -C "$W/scion-kernel" rev-parse HEAD)
+          TAG=kernels-${REV:0:12}
+          mkdir rel
+          for d in starlte star2lte crownlte; do cp "$W/kernels/kernel-$d" rel/; done
+          (cd rel && sha256sum kernel-* > SHA256SUMS && cat SHA256SUMS)
+          echo "rev=$REV" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          {
+            echo "### $TAG"
+            echo
+            echo "For build-installer.sh (with KERNEL_REV=$REV):"
+            echo '```'
+            for d in starlte star2lte crownlte; do echo "KSUM_$d=$(sha256sum "rel/kernel-$d" | cut -d' ' -f1)"; done
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Publish (never over an existing release)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REV: ${{ steps.collect.outputs.rev }}
+          TAG: ${{ steps.collect.outputs.tag }}
+        run: |
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "$TAG is published already; its SHA-256s may be pinned, so it is not replaced" >&2
+            exit 1
+          fi
+          cat > notes.md <<NOTES
+          The kernels of the Galaxy S9 (starlte), S9+ (star2lte) and Note9 (crownlte), built by the kernels workflow
+          ([run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})) from
+          [Scion-Project/scion-kernel@${REV:0:12}](https://github.com/Scion-Project/scion-kernel/commit/$REV), for
+          \`build-installer.sh --prebuilt-kernel\`. SHA256SUMS lists them.
+
+          XNU (APSL 2.0) with Scion's changes and drivers; the source is the kernel repository at that commit and the fork its
+          profile pins. No iOS in them: everyone still builds the system image from their own IPSW.
+          NOTES
+          gh release create "$TAG" rel/* --title "$TAG" --notes-file notes.md --target "${{ github.sha }}"
