@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: MIT-0 -->
 # Scion's apt repository (Sileo)
 
 A static apt repository for Scion: what Sileo, which Scion's system image carries, shows as a source. It is plain

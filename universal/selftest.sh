@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: MIT-0
 # universal/selftest.sh: the universal installer made from stand-ins and run against a pretend TWRP, on this computer.
 # Nothing of Apple's or Samsung's: the "system image" is 64 KB with APFS's magic, the "kernels" and boot images are a few
 # bytes, the partitions are files. update-binary runs as TWRP runs it (sh, its arguments, its output pipe), with only the

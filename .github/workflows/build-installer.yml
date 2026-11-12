@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT-0
 # build-installer.sh, kept from rotting: the whole one-command build run end to end on every change, with nothing of
 # Apple's (--open: the placeholder loader, a stand-in system image, the open small root), and the installers' self-test.
 #
