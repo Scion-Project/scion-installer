@@ -391,7 +391,8 @@ run() { # LOG CMD...: the command's output to its log; its tail on failure
 if [ "$OPEN" = 0 ]; then
 	step "Unpacking your IPSW (sysimage/unpack.sh; a few minutes the first time)"
 	# unpack.sh finds 7z by that name
-	if [ "$SEVENZ" = 7zz ] && ! have 7z; then mkdir -p "$WORK/bin" && ln -sf "$(command -v 7zz)" "$WORK/bin/7z" && export PATH="$WORK/bin:$PATH"; fi
+	# the chosen 7zz goes ahead of any `7z` on PATH: Debian ships p7zip 16 as 7z, which cannot read the IPSW's APFS image
+	if [ "$SEVENZ" = 7zz ]; then mkdir -p "$WORK/bin" && ln -sf "$(command -v 7zz)" "$WORK/bin/7z" && export PATH="$WORK/bin:$PATH"; fi
 	# (a second run finds what it unpacked before and does not read the IPSW again for it)
 	run unpack.log sysimage/unpack.sh "$IPSW"
 	tail -2 "$LOGS/unpack.log" | sed 's/^/  /'
