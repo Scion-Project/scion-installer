@@ -1,0 +1,33 @@
+{
+  "package": "com.scion.app.puzzles",
+  "name": "Puzzles",
+  "version": "1.3.2-scion1",
+  "section": "Games",
+  "bundle": "Puzzles.app",
+  "bundle_id": "com.scion.oss.puzzles",
+  "min_ios": "14.0",
+  "author": "Simon Tatham and contributors; iOS front end by Greg Hewgill",
+  "homepage": "https://www.chiark.greenend.org.uk/~sgtatham/puzzles/",
+  "license": "MIT",
+  "license_file": "LICENCE",
+  "source": {
+    "git": "https://github.com/ghewgill/puzzles.git",
+    "commit": "01c3e382d9c7013f0bb4eb9f1ff2d19bb05d4241"
+  },
+  "host": "linux",
+  "summary": "Simon Tatham's Portable Puzzle Collection",
+  "description": [
+    "39 logic puzzles (Mines, Net, Solo, Loopy, Bridges, Pattern, Untangle and the rest),",
+    "built from source for Scion. Works offline: no account, no network, no ads.",
+    "This is not the App Store build: it is built from the upstream iOS port at the commit",
+    "in the Source-Code field, with the build changes listed in",
+    "/var/jb/usr/share/doc/com.scion.app.puzzles/SOURCE."
+  ],
+  "changes": [
+    "Built on Linux with clang and the iPhoneOS 16.5 SDK in place of Xcode; no source file is changed.",
+    "Launch Screen.storyboard replaced by an empty UILaunchScreen in Info.plist (ibtool is macOS only).",
+    "The asset catalog's app icons copied as loose AppIcon60x60 and AppIcon76x76 files (actool is macOS only).",
+    "Bundle identifier com.scion.oss.puzzles, so it never stands in for the author's App Store app.",
+    "version.c in place of svnversion.c, which the Xcode project names and the repository does not carry."
+  ]
+}
