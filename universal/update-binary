@@ -86,7 +86,7 @@ by_id() { # an id (boot loader or model, without SM-) -> the phone; Korean model
 	case "$1" in
 	G960F*) echo starlte ;; G965F*) echo star2lte ;; N960F*) echo crownlte ;;
 	G960N*) [ "$KOREAN" = 1 ] && echo starlte || echo korean ;;
-	G965N*) [ "$KOREAN" = 1 ] && echo star2lte || echo korean ;;
+	G965N*) echo star2lte ;;                                    # the Korean S9+: run on, the same board as the G965F
 	N960N*) [ "$KOREAN" = 1 ] && echo crownlte || echo korean ;;
 	'') ;;
 	*) echo unknown ;;
@@ -122,7 +122,7 @@ done
 [ -n "$from_bl$from_id" ] || abort "this recovery gives neither the boot loader's id nor an SM- model: cannot tell which phone this is"
 case "$PHONE" in
 starlte) NAME="Galaxy S9" ;;
-star2lte) NAME="Galaxy S9+ (never run on one: the S9's UEFI, borrowed)" ;;
+star2lte) NAME="Galaxy S9+ (the S9's UEFI, borrowed)" ;;
 crownlte) NAME="Galaxy Note9 (never run on one: the S9's UEFI, borrowed)" ;;
 esac
 KEY=$(echo "$PHONE" | tr a-z A-Z)
