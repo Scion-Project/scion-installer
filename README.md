@@ -11,6 +11,14 @@ Only the tooling lives here. Everything an installer carries is built locally, f
 So an installer is yours, to hand on privately. It is never published and never committed; `.gitignore` keeps `*.zip`,
 `*.img` and `*.apfs` out.
 
+## iOS 27 on the Galaxy S9 is not installed from here
+
+The installers of this repository carry iOS 16.5. iOS 27 (experimental, Galaxy S9 SM-G960F only) uses a different layout: a boot
+image and a raw system image written to `BOOT` and `USERDATA` from TWRP over adb, with no zip (the system image is about 20 GiB, and
+TWRP's zip reader has no Zip64). You build both yourself from source and your own iPhone 11 restore image. It erases the phone, it
+has no Wi-Fi, sound, Bluetooth or cellular, and it can hang. The one page with the steps, what works and how to get back is in the
+kernel repository: [iOS 27 on a Galaxy S9: build it and install it yourself](https://github.com/Scion-Project/scion-kernel/blob/main/docs/ios27/INSTALL-S9.md).
+
 ## Build it in one command: `build-installer.sh`
 
 You need your own copy of iOS 16.5 (20F66) for the iPhone X: `iPhone10,3,iPhone10,6_16.5_20F66_Restore.ipsw`, 6 165 698 198
