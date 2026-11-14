@@ -178,6 +178,16 @@ case " $DEVLIST " in *" starlte "*)
 	S9_ARGS="rtc_pmic= shub=6 bt=7"
 	S9_USERLAND=(BT=1 DEVICE=starlte) ;;
 esac
+# Metal on the S9+ (star2lte): the plug-in on Vulkan (userland/build.sh METAL=vk), over PanVK, Mesa's Vulkan driver for the
+# Mali-G72 (tools/mk-panvk.sh), and metal2vulkan's runtime (tools/metal/mk-metal2vulkan.sh, which build.sh runs; it installs its
+# own pinned Rust toolchain under xnu-deps/rust). The S9+'s defaults (devices/star2lte, metal=2) show the device to applications,
+# app extensions and the window server, which then draws with Metal; camtl=0 keeps the window server on OpenGL ES, and metal=
+# (nothing after it) takes Metal out (the kernel repository's docs/metal.md, Phase 9). The S9 and the Note9 get the same image
+# without metal=: their kernels name no plug-in, and nothing of it is loaded.
+METAL_USERLAND=()
+case " $DEVLIST " in *" star2lte "*)
+	METAL_USERLAND=(METAL=vk METAL_ICD=/redwood/lib/libvulkan_panfrost.dylib "PANVK_DIR=$KREPO/xnu-deps/build/panvk/out") ;;
+esac
 
 # --- prerequisites: every problem at once, each with what to do --------------------------------------------------------
 case "$(uname -s)" in Darwin) HOST=macos ;; Linux) HOST=linux ;; *) die "this runs on macOS or Linux (on Windows: in WSL, in its own filesystem)" ;; esac
@@ -239,6 +249,12 @@ if [ "$OPEN" = 0 ]; then   # Mesa, for the S9's GPU (GL=1)
 		if [ -n "$v" ] && [ "${v%%.*}" -ge 3 ]; then BISON3=$(dirname "$b"); break; fi
 	done
 	[ -n "$BISON3" ] || missing "bison 3 or newer (Mesa; macOS's /usr/bin/bison is 2.3)" "$B bison"
+	# Metal on the S9+: metal_tri's hand-written AIR shaders are assembled by llvm-as (userland/build.sh METAL=vk)
+	[ ${#METAL_USERLAND[@]} = 0 ] || have llvm-as || missing "llvm-as (Metal on the S9+: metal_tri's shaders)" "$B llvm"
+	# ... and on macOS metal2vulkan's self-test shaders are compiled by Xcode's Metal compiler (not on Linux, where they are left out)
+	if [ ${#METAL_USERLAND[@]} -gt 0 ] && [ "$HOST" = macos ] && ! xcrun -sdk iphoneos metal -v >/dev/null 2>&1; then
+		missing "Xcode's Metal compiler (Metal on the S9+: metal2vulkan's self-test)" "Xcode, then xcodebuild -downloadComponent MetalToolchain"
+	fi
 fi
 if [ "$HOST" = linux ]; then
 	for t in autoconf automake; do have $t || missing "$t" "$B $t"; done
@@ -251,6 +267,8 @@ if [ ${#UARGS[@]} -gt 0 ]; then
 fi
 # disk: the sources and the build (kernel trees, Mesa, the unpacked IPSW, the images) and the zip
 need_gb=$([ "$OPEN" = 1 ] && echo 8 || echo 20)
+# Metal on the S9+: PanVK's tree, the Rust toolchain and metal2vulkan's build, about 4 GB more
+[ "$OPEN" = 1 ] || [ ${#METAL_USERLAND[@]} = 0 ] || need_gb=$((need_gb + 4))
 mkdir -p "$WORK" "$OUTDIR"
 free_gb=$(df -Pk "$WORK" | awk 'NR == 2 { print int($4 / 1048576) }')
 used_gb=$(du -sk "$WORK" 2>/dev/null | awk '{ print int($1 / 1048576) }')
@@ -477,12 +495,16 @@ if [ "$OPEN" = 0 ]; then
 	# files checked out or unpacked before this script set its umask (a clone made by hand under 002, a work directory
 	# kept from an earlier run) keep their group write bit, and launchd would refuse the jobs made from them
 	find "$KREPO" -xdev ! -type l \( -perm -020 -o -perm -002 \) -exec chmod go-w {} + 2>/dev/null || true
-	step "The small root and the iOS system image (userland/build.sh, with Mesa the first time: 10 to 30 minutes)"
+	if [ ${#METAL_USERLAND[@]} -gt 0 ]; then
+		step "PanVK, Mesa's Vulkan driver for the Mali, for Metal on the S9+ (tools/mk-panvk.sh: 5 to 15 minutes)"
+		run panvk.log env BISON3="$BISON3" bash -c 'export PATH="$BISON3:$PATH" && tools/mk-panvk.sh ios'
+	fi
+	step "The small root and the iOS system image (userland/build.sh, with Mesa the first time: 10 to 30 minutes$([ ${#METAL_USERLAND[@]} = 0 ] || echo "; with metal2vulkan and its Rust toolchain the first time, 20 more"))"
 	if [ "$WEBCLIPS" = 1 ]; then
 		# a kernel revision without it would ignore the variable, and the person would look for icons that are not there
 		grep -q 'WEBCLIPS' userland/build.sh || die "--webclips: this kernel revision (${KREF:0:12}) has no WEBCLIPS in userland/build.sh; give --kernel-ref a revision that has"
 	fi
-	if ! env ${S9_USERLAND[@]+"${S9_USERLAND[@]}"} "JB_KEPT_ONLY=$([ "$SILEO" = 1 ] && echo 1)" "WEBCLIPS=$([ "$WEBCLIPS" = 1 ] && echo 1)" BISON3="$BISON3" bash -c 'source ./xnu-env.sh && export PATH="$BISON3:$PATH" && cd userland && GL=1 NO_AIR=1 REST=1 ALONE=1 RC=rc.launchd bash build.sh' > "$LOGS/userland.log" 2>&1; then
+	if ! env ${S9_USERLAND[@]+"${S9_USERLAND[@]}"} ${METAL_USERLAND[@]+"${METAL_USERLAND[@]}"} "JB_KEPT_ONLY=$([ "$SILEO" = 1 ] && echo 1)" "WEBCLIPS=$([ "$WEBCLIPS" = 1 ] && echo 1)" BISON3="$BISON3" bash -c 'source ./xnu-env.sh && export PATH="$BISON3:$PATH" && cd userland && GL=1 NO_AIR=1 REST=1 ALONE=1 RC=rc.launchd bash build.sh' > "$LOGS/userland.log" 2>&1; then
 		tail -40 "$LOGS/userland.log" >&2
 		M=xnu-deps/build/mesa
 		for f in $M/meson-setup.log $M/ninja.log; do

@@ -203,9 +203,14 @@ The boot-arguments:
   battery and vibration, the USB log and console, the GPU and both governors, the brightness slider, zero-copy display,
   the RTC, the front camera, the speakers and Wi-Fi. Extra boot-args go over them (`name=value` replaces one, `name=` drops
   it). Diagnostics are never defaults. The zip records the whole line the image carries;
-- the S9+'s and the Note9's are `cpus=2 bootcpu=2 ufs=2 tmu=3 esslog=1 system_apfs=ufs_SYSTEM` (the SoC's, seen on the
+- the S9+'s are its defaults, the kernel repository's `devices/star2lte/configs/star2lte.config`, as for the S9: eight
+  cores, the flash through the loader, touch, keys, battery, USB, the GPU, the cameras, the speakers, Wi-Fi and Bluetooth,
+  and Metal (`metal=2`): applications, app extensions and the window server draw with Metal on the Mali-G72, through PanVK
+  and metal2vulkan, which `build-installer.sh` builds into the image when the S9+ is among the phones. `camtl=0` keeps the
+  window server on OpenGL ES and `metal=` takes Metal out (the kernel repository's `docs/metal.md`, Phase 9);
+- the Note9's are `cpus=2 bootcpu=2 ufs=2 tmu=3 esslog=1 system_apfs=ufs_SYSTEM` (the SoC's, seen on the
   S9: two A55s, the flash through the loader, the thermal stop, the log kept for TWRP), with a 120 s time limit after
-  which the run goes back to TWRP with its log. Touch, keys, battery, USB, GPU: add them one at a time with `-a`, as each
+  which the run goes back to TWRP with its log. Touch, keys, battery, USB, GPU: add them one at a time with `-a`, as the
   phone's README orders them ("First runs").
 
 ### Build
