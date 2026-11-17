@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: MIT-0
 # One TWRP installer for the Exynos 9810 Galaxys: the S9 (SM-G960F, starlte), the S9+ (SM-G965F, star2lte) and the Note9
 # (SM-N960F, crownlte). The zip carries a boot image for each phone it was made for and one iOS system image; in TWRP it
 # finds out which phone it is on (update-binary: the boot loader's id, the model and the device name must agree), refuses

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT-0
 """storedzip.py OUT.zip PROP_TEMPLATE NAME=FILE...: a zip TWRP can run, every member stored (not compressed), with no
 Zip64 (each member and the whole under 4 GiB) and no extra fields, so that where each member's data begins is known in
 advance. The first member is scion/installer.prop: PROP_TEMPLATE with @NAME_OFF@, @NAME_SIZE@ and @NAME_SHA256@

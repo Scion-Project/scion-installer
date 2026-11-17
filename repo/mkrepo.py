@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT-0
 """Index a directory of .deb files as a static apt repository that Sileo (and apt) read: Packages, Packages.gz,
 Packages.xz, Packages.bz2 and Release, beside the debs. No apt tools needed (pure Python, so it runs on a Mac too).
 

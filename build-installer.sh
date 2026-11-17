@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: MIT-0
 # build-installer.sh: a Scion installer for the Galaxy S9, S9+ and Note9, made in one command from your own IPSW.
 #
 #   ./build-installer.sh --ipsw /path/to/iPhone10,3,iPhone10,6_16.5_20F66_Restore.ipsw

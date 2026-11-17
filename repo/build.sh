@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: MIT-0
 # Build the Scion repository into a directory you can serve as it is (any static web server, or GitHub Pages):
 #   repo/build.sh KERNEL_CHECKOUT OUT_DIR [mkrepo.py options, e.g. --sign KEYID]
 # With APPS_WORK=DIR (and THEOS) it also builds the open-source apps of repo/apps/ from source (repo/mkapps.py):

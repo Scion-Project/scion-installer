@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT-0
 # The Sileo repository (repo/): built and tested on every change to it. Nothing is deployed from here.
 name: repo
 
