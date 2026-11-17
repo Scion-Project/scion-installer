@@ -18,9 +18,9 @@
 #   -r  the small root (ALONE=1 RC=rc.launchd), the same for every phone; default the kernel repo's userland/root.apfs
 #   -a  more boot-arguments for one phone only (repeatable), over its defaults
 #   -p  the partition the system image goes to (SYSTEM)
-#   -t  a test run's seconds, after which the loader keeps the log and restarts into TWRP. Default: 0 (no limit) on the S9,
-#       120 on the S9+ and the Note9, which nobody has run this on
-#   -N  also accept the Korean models (SM-G960N, G965N, N960N): their boards' device trees were never read, so they
+#   -t  a test run's seconds, after which the loader keeps the log and restarts into TWRP. Default: 0 (no limit) on the S9
+#       and the S9+, 120 on the Note9, which nobody has run this on
+#   -N  also accept the Korean S9 and Note9 (SM-G960N, N960N): their boards' device trees were never read, so they
 #       are refused unless the zip is made with this
 #   -V  verbose: the kernel's log on the screen while it starts
 #   -U  the zip also makes /private/var persistent: it formats USERDATA as HFS Plus (THIS ERASES ANDROID'S DATA) and
@@ -99,9 +99,10 @@ fi
 
 # The S9's boot-arguments are its defaults, which devices/starlte/mkimage.sh puts on every image (the kernel repository's
 # devices/starlte/configs/starlte.config; README.md there, "Defaults"): nothing is given
-# for it here but the system image's partition and -a's.
+# for it here but the system image's partition and -a's. The S9+ (star2lte, SM-G965F and the Korean SM-G965N, run on
+# the latter) is made the same way, from devices/star2lte/configs/star2lte.config.
 S9_ARGS=
-# The S9+ and the Note9: what is the SoC's and was seen on the S9 with nothing of the board's: the two A55s, the flash
+# The Note9: what is the SoC's and was seen on the S9 with nothing of the board's: the two A55s, the flash
 # through the loader, the thermal stop, the log kept for TWRP. No driver of the board's (touch, keys, battery, USB,
 # GPU) until someone has seen it on that phone: add them with -a, one at a time (devices/<name>/README.md, "First runs").
 UNSEEN_ARGS="cpus=2 bootcpu=2 ufs=2 tmu=3 esslog=1"
@@ -130,8 +131,10 @@ for dev in starlte star2lte crownlte; do
 	k=$(abs "$(get KERNEL $dev)")
 	[ -f "$k" ] || { echo "mkinstaller.sh: $dev's kernel $k is missing" >&2; exit 1; }
 	[ -x "$KREPO/devices/$dev/mkimage.sh" ] || { echo "mkinstaller.sh: $KREPO/devices/$dev is not synced (tools/hakios-device.py sync $dev)" >&2; exit 1; }
-	[ "$dev" != starlte ] || grep -q -- '--with' "$KREPO/devices/starlte/mkimage.sh" || {
-		echo "mkinstaller.sh: $KREPO/devices/starlte is older than the S9's defaults: tools/hakios-device.py sync starlte" >&2; exit 1; }
+	case "$dev" in starlte|star2lte)
+		grep -q -- '--with' "$KREPO/devices/$dev/mkimage.sh" || {
+			echo "mkinstaller.sh: $KREPO/devices/$dev is older than its defaults: tools/hakios-device.py sync $dev" >&2; exit 1; } ;;
+	esac
 	if [ "$FWCHECK" = 1 ]; then
 		fwtool="$KREPO/devices/$dev/tools/fetch-firmware.sh"
 		if [ -x "$fwtool" ]; then
@@ -149,13 +152,16 @@ for dev in starlte star2lte crownlte; do
 	fi
 	if [ "$dev" = starlte ]; then
 		args="$S9_ARGS" secs=${SECS:-0} borrow=
+	elif [ "$dev" = star2lte ]; then
+		args="$S9_ARGS" secs=${SECS:-0} borrow=-U   # its own defaults; the S9's UEFI (devices/star2lte/README.md, "The UEFI")
 	else
 		args="$UNSEEN_ARGS" secs=${SECS:-120} borrow=-U   # the S9's UEFI: devices/<name>/README.md, "The UEFI"
 	fi
 	# (the S9's defaults already keep /private/var in USERDATA: said again, it changes nothing there)
 	[ "$FORMAT" = 1 ] && args="$args ufs_write=1 var_hfs=ufs_USERDATA_data"
 	args=$(echo $args system_apfs=ufs_$PART$(get EXTRA $dev) $*)
-	echo "mkinstaller.sh: $dev: boot-args $args$([ "$dev" != starlte ] || echo ' (over the S9 defaults)')"
+	over=; [ "$dev" != starlte ] && [ "$dev" != star2lte ] || over=" (over the $dev defaults)"
+	echo "mkinstaller.sh: $dev: boot-args $args$over"
 	made=$("$KREPO/devices/$dev/mkimage.sh" $borrow $QUIET -o "$WORK/boot_$dev.img" -k "$k" -r "$ROOT" -s "$secs" $args)
 	echo "$made" | sed 's/^/  /'
 	# what the image carries, as its mkimage.sh said it (the S9's: its defaults with these over them)
