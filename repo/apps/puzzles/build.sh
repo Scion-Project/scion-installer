@@ -33,10 +33,20 @@ for f in "${SRCS[@]}"; do
 	pids+=($!)
 done
 for p in "${pids[@]}"; do wait "$p"; done
+# The SDK version written into the binary decides what UIKit asks of the app: one linked against the iOS 27 SDK (or later)
+# must use the UIScene life cycle or UIKit stops it at launch ("Application failed to launch: UIScene life cycle is
+# required for apps built with this SDK", SIGTRAP; seen on iOS 27 with a build made against Xcode's newer SDK). This front
+# end has an app delegate and no scenes, so the binary says 16.5 whatever SDK is at hand, and the check below holds it to that.
+LINKSDK=16.5
 "$BIN/clang" -target arm64-apple-ios$MIN -isysroot "$SDK" -fobjc-arc -o "$APP/Puzzles" "$OBJ"/*.o \
+	-Wl,-platform_version,ios,$MIN,$LINKSDK \
 	-framework UIKit -framework Foundation -framework CoreGraphics -framework QuartzCore \
 	-framework AudioToolbox -framework CoreText -framework WebKit
 "$BIN/strip" -x "$APP/Puzzles" 2>/dev/null || true
+if [ -x "$BIN/otool" ]; then
+	sdk=$("$BIN/otool" -l "$APP/Puzzles" | awk '/LC_BUILD_VERSION/ {b=1} b && $1 == "sdk" {print $2; exit}')
+	[ "$sdk" = "$LINKSDK" ] || { echo "build.sh: Puzzles says SDK ${sdk:-?}, not $LINKSDK (iOS 27 would stop it at launch)" >&2; exit 1; }
+fi
 
 # resources: the project's Resources phase, less what only Xcode's tools compile (handled below)
 grep -o '[A-Za-z0-9_@.+-]* in Resources' "$PBX" | sed 's/ in Resources//' | sort -u |
