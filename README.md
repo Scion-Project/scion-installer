@@ -16,9 +16,10 @@ So an installer is yours, to hand on privately. It is never published and never 
 
 The installers of this repository carry iOS 16.5. iOS 27 (experimental, Galaxy S9 SM-G960F only) uses a different layout: a boot
 image and a raw system image written to `BOOT` and `USERDATA` from TWRP over adb, with no zip (the system image is about 20 GiB, and
-TWRP's zip reader has no Zip64). You build both yourself from source and your own iPhone 11 restore image. It erases the phone, it
-has no Wi-Fi, sound, Bluetooth or cellular, and it can hang. The one page with the steps, what works and how to get back is in the
-kernel repository: [iOS 27 on a Galaxy S9: build it and install it yourself](https://github.com/Scion-Project/scion-kernel/blob/main/docs/ios27/INSTALL-S9.md).
+TWRP's zip reader has no Zip64). You build both yourself from source and your own iPhone 11 restore image. It erases Android's data
+and it can hang. Since 17 November its kernel starts the S9's Wi-Fi, audio, Bluetooth and modem by default, but iOS uses them only
+with root steps that the one-command root build does not run yet, and that kernel has not yet been run on a phone with all of them
+on. The one page with the steps, what works (and how far each part was seen) and how to get back is in the kernel repository: [iOS 27 on a Galaxy S9: build it and install it yourself](https://github.com/Scion-Project/scion-kernel/blob/main/docs/ios27/INSTALL-S9.md).
 
 ## Build it in one command: `build-installer.sh`
 
@@ -33,7 +34,8 @@ bytes. Nothing here downloads it, and nothing here holds a key or decrypts anyth
 What it does, stopping at the first problem with what to do about it:
 1. It checks that the machine has what the build needs, and lists everything that is missing at once.
 2. It checks your IPSW: its size, its `BuildManifest.plist` (16.5, 20F66, iPhone10,3 and iPhone10,6) and its SHA-256.
-3. It clones the kernel repository at the commit pinned in the script, into `./scion-build`. Then it checks out the
+3. It clones the kernel repository at the commit pinned in the script (one of 10 November: it does not have the S9's modem,
+   which the kernel repository's iOS 16.5 build has had since 17 November and which has not been run under 16.5 yet), into `./scion-build`. Then it checks out the
    device repositories at the revisions that commit's `devices/manifest.conf` pins (`tools/hakios-device.py sync`).
 4. It runs the build in the **Build** sections below: `sysimage/unpack.sh`, the identity, one kernel for each phone, the
    loader, the small root and the system image, with Sileo in it (**Sileo**, below). Then it runs
@@ -42,7 +44,8 @@ What it does, stopping at the first problem with what to do about it:
 
 Options:
 - `--device`: every build is the universal zip, with all three phones unless you give `starlte`, `star2lte`, `crownlte` or
-  a list such as `starlte,crownlte`. **Nobody has run Scion on an S9+ or a Note9 yet.**
+  a list such as `starlte,crownlte`. **Nobody has reported running this installer on an S9+ or a Note9.** The S9+ has run
+  Scion from its owner's own build (Anan Jaser, an SM-G965N: scion-star2lte's `device.conf`); nothing has run on a Note9.
 - `--no-sileo`: leave Sileo and the Procursus bootstrap out of the system image.
 - `--webclips`: web apps on the home screen from the first boot (off by default): Wikipedia, Mastodon, Element,
   OpenStreetMap, Excalidraw, Jitsi Meet, Bluesky and Scion's own page, as the web clips that Safari's "Add to Home
@@ -172,8 +175,8 @@ in scion-kernel, has the order of tests and the way back.
 ## The Exynos 9810 Galaxys in one zip: S9, S9+, Note9 (`universal/`)
 
 One zip for the Galaxy S9 (SM-G960F, `starlte`), the Galaxy S9+ (SM-G965F, `star2lte`) and the Galaxy Note9 (SM-N960F,
-`crownlte`), with a boot image for each phone it was made for and one iOS system image. **Nobody has run Scion on an S9+ or a
-Note9.** Their boot images borrow the S9's UEFI (no UEFI exists for them: scion-star2lte and scion-crownlte, README,
+`crownlte`), with a boot image for each phone it was made for and one iOS system image. **Nobody has reported running this
+installer on an S9+ or a Note9** (the S9+ has run Scion from its owner's own build; nothing has run on a Note9). Their boot images borrow the S9's UEFI (no UEFI exists for them: scion-star2lte and scion-crownlte, README,
 "The UEFI"), their first runs are tests, and their default boot-arguments start no driver of the board's.
 
 What the zip does in TWRP (`universal/update-binary`, a shell script):
