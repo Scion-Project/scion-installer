@@ -12,7 +12,7 @@ MIT-0 paths (top-level location, number of files):
 
 - `.github`: 2 files
 - `(top level)`: 3 files
-- `repo`: 5 files
+- `repo`: 3 files
 - `tools`: 1 file
 - `universal`: 5 files
 
