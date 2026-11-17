@@ -160,7 +160,8 @@ for dev in starlte star2lte crownlte; do
 	# (the S9's defaults already keep /private/var in USERDATA: said again, it changes nothing there)
 	[ "$FORMAT" = 1 ] && args="$args ufs_write=1 var_hfs=ufs_USERDATA_data"
 	args=$(echo $args system_apfs=ufs_$PART$(get EXTRA $dev) $*)
-	echo "mkinstaller.sh: $dev: boot-args $args$(case "$dev" in starlte|star2lte) echo " (over the $dev defaults)" ;; esac)"
+	over=; [ "$dev" != starlte ] && [ "$dev" != star2lte ] || over=" (over the $dev defaults)"
+	echo "mkinstaller.sh: $dev: boot-args $args$over"
 	made=$("$KREPO/devices/$dev/mkimage.sh" $borrow $QUIET -o "$WORK/boot_$dev.img" -k "$k" -r "$ROOT" -s "$secs" $args)
 	echo "$made" | sed 's/^/  /'
 	# what the image carries, as its mkimage.sh said it (the S9's: its defaults with these over them)

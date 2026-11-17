@@ -58,7 +58,7 @@ ZIPNAME=scion-exynos9810-installer$(if [ "$FORMAT" = 1 ]; then echo -format-user
 	$(if [ "$FORMAT" = 1 ]; then echo "-U -u star2lte=$UBLOCKS"; fi) > "$T/make.log" 2>&1 || { cat "$T/make.log"; fail "mkinstaller.sh"; }
 # (-U adds ufs_write=1 var_hfs=ufs_USERDATA_data, which the S9's defaults hold already)
 UVAR=; [ "$FORMAT" = 0 ] || UVAR="ufs_write=1 var_hfs=ufs_USERDATA_data "
-grep -qF "starlte: boot-args ${UVAR}system_apfs=ufs_SYSTEM (over the S9 defaults)" "$T/make.log" || fail "the S9's boot-args are not its defaults and the partition: $(grep starlte: "$T/make.log")"
+grep -qF "starlte: boot-args ${UVAR}system_apfs=ufs_SYSTEM (over the starlte defaults)" "$T/make.log" || fail "the S9's boot-args are not its defaults and the partition: $(grep starlte: "$T/make.log")"
 grep -qF "  mkimage.sh: boot-args: cpus=6 bootcpu=2 ufs=3 ${UVAR}system_apfs=ufs_SYSTEM" "$T/make.log" || fail "the S9's image does not carry its defaults"
 grep -q 'crownlte: boot-args cpus=2 bootcpu=2 ufs=2 tmu=3 esslog=1 .*system_apfs=ufs_SYSTEM usb_gadget=5' "$T/make.log" ||
 	fail "the Note9's boot-args: $(grep crownlte: "$T/make.log")"
@@ -103,7 +103,7 @@ if [ "$FORMAT" = 0 ]; then
 	run G960FXXU9FUG1 SM-G960F starlte "$Z" || { cat "$T/twrp.out"; fail "an S9"; }; check starlte
 	grep -q 'secs=0' "$T/dev/BOOT" || fail "the S9's run has a time limit"
 	run G965FXXUFFUG2 SM-G965F star2lte "$Z" || { cat "$T/twrp.out"; fail "an S9+"; }; check star2lte
-	grep -q 'secs=120' "$T/dev/BOOT" || fail "the S9+'s first run has no time limit"
+	grep -q 'secs=0 ' "$T/dev/BOOT" || fail "the S9+'s run has a time limit (it is made from its own defaults, as the S9's)"
 	run N960FXXS9FVA1 SM-N960F crownlte "$Z" || { cat "$T/twrp.out"; fail "a Note9"; }; check crownlte
 	run G965FXXUFFUG2 SM-G965FD star2lte "$Z" || { cat "$T/twrp.out"; fail "an S9+ Duos"; }; check star2lte
 	run '' SM-N960F '' "$Z" || { cat "$T/twrp.out"; fail "a Note9 known by its model alone"; }; check crownlte
