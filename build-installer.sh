@@ -358,7 +358,11 @@ else
 fi
 git -C "$KREPO" cat-file -e "$KREF^{commit}" 2>/dev/null || git -C "$KREPO" fetch -q origin "$KREF" || die "no commit $KREF in $KERNEL_REPO"
 git -C "$KREPO" -c advice.detachedHead=false checkout -q "$KREF" 2>/dev/null || git -C "$KREPO" -c advice.detachedHead=false checkout -q FETCH_HEAD
-(cd "$KREPO" && python3 tools/hakios-device.py sync $DEVLIST) | sed 's/^/  /'
+# The other 9810 phones' images borrow the S9's prebuilt UEFI (devices/starlte/prebuilt/SILICIUM_UEFI.fd),
+# so the S9's repository is synced too when it isn't being built itself: --device crownlte alone died in mkimage.sh
+SYNC=$DEVLIST
+case " $DEVLIST " in *" starlte "*) ;; *) SYNC="$DEVLIST starlte" ;; esac
+(cd "$KREPO" && python3 tools/hakios-device.py sync $SYNC) | sed 's/^/  /'
 for d in $DEVLIST; do [ -x "$KREPO/devices/$d/mkimage.sh" ] || die "devices/$d did not sync (tools/hakios-device.py sync $d)"; done
 # The kernel's tree is laid out once (make kernel: xnu/apply.sh when there is none), and XNU's patches are not re-read after
 # that: a --work used before with another commit gets a fresh one, and the Wi-Fi driver's objects made against the old.
