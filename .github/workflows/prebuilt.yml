@@ -1,0 +1,194 @@
+# SPDX-License-Identifier: MIT-0
+# The prebuilt parts of the installer for one kernel revision: everything build-installer.sh would otherwise compile that
+# does NOT come from anyone's IPSW, built here once and published as this repository's release prebuilt-<first 12 hex of the
+# revision>, which build-installer.sh downloads by default (checked against the SHA-256 it pins) instead of compiling.
+#
+#   kernel-starlte.tar.xz, kernel-crownlte.tar.xz   the phones' kernels (make <phone>_defconfig && make kernel, the S9's
+#                                                   with Linux's brcmfmac, ISC): XNU, APSL 2.0, with Scion's changes
+#   kernel-star2lte.tar.xz                          the S9+'s, ONLY when it was built without its camera driver: with it,
+#                                                   the kernel holds the sensors' register tables and RAM patches made from
+#                                                   Samsung's GPL headers (tools/mk-star2-setfiles.sh), firmware in
+#                                                   substance, which is fetched by whoever builds and never republished
+#   mesa-gles-ios.tar.xz                            Mesa 25.0.7's OpenGL ES library (tools/mk-mesa.sh), MIT
+#   panvk-ios.tar.xz                                PanVK, Mesa's Vulkan driver for the Mali (tools/mk-panvk.sh ios), MIT
+#   SHA256SUMS                                      the SHA-256 of each; its own SHA-256 is what build-installer.sh pins
+#
+# Each archive carries its licences and notices (LICENSES/) and SOURCE.md, the exact sources it was built from.
+#
+# What is NOT here, and why (README.md, "What is prebuilt"): nothing of an IPSW and nothing made from one (the system image,
+# the small root, whose launchd jobs, var.skel and xpc files are made from the IPSW's; the loader, which carries the
+# iPhone's identity from the IPSW's device tree; the boot images, which hold the loader); no vendor firmware (the
+# device repositories' fetch-firmware.sh keeps fetching it from its own source on the user's machine); no Apple SDK (the
+# theos iPhoneOS16.5.sdk and toolchain are fetched here at build time, as in kernel CI, and never published: what is
+# published is compiled against its headers and stubs, nothing of it copied); and metal2vulkan (GPL-2.0-or-later OR
+# LGPL-3.0-or-later), whose binary distribution the kernel repository's COMPLIANCE.md leaves unsettled: the S9+'s
+# Metal library is still built on the user's machine.
+#
+# A release is never replaced: its SHA-256s may be pinned. A pull request that changes this file builds and checks the
+# whole set (and an --open build from it), and keeps it as the run's artifact; only a run by hand on main with
+# publish=true makes a release.
+name: prebuilt
+
+on:
+  workflow_dispatch:
+    inputs:
+      kernel_ref:
+        description: Scion-Project/scion-kernel commit (empty for the one build-installer.sh pins)
+        default: ""
+      publish:
+        description: Publish the release prebuilt-<rev> (on main only)
+        type: boolean
+        default: false
+  pull_request:
+    paths:
+      - .github/workflows/prebuilt.yml
+      - tools/prebuilt-pack.sh
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prebuilt-${{ github.ref }}-${{ inputs.kernel_ref || 'pinned' }}
+  cancel-in-progress: true
+
+env:
+  W: /mnt/w
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    outputs:
+      rev: ${{ steps.pack.outputs.rev }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Work space on /mnt
+        run: sudo mkdir -p "$W" && sudo chown -R "$(id -u):$(id -g)" "$W" && df -h / /mnt
+      - name: Packages (the full from-source toolchain: this is the one machine that needs it)
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends build-essential git curl clang lld python3 python3-venv \
+            perl xz-utils flex bison m4 autoconf automake libtool-bin uuid-dev llvm meson ninja-build pkg-config 7zip
+      - name: Cache theos (its Linux toolchain and iPhoneOS16.5.sdk, fetched from theos, never published)
+        uses: actions/cache@v4
+        with:
+          path: /mnt/w/theos
+          key: theos-iOSToolchain-x86_64-iPhoneOS16.5-v1
+      - name: The kernels (build-installer.sh --open --from-source; no IPSW)
+        env:
+          KREF: ${{ inputs.kernel_ref }}
+        run: ./build-installer.sh --open --from-source --device all --work "$W" --out "$W/out" ${KREF:+--kernel-ref "$KREF"}
+      - name: Mesa's OpenGL ES library (tools/mk-mesa.sh, as userland/build.sh GL=1 runs it)
+        run: |
+          cd "$W/scion-kernel"
+          export THEOS=$W/theos
+          t0=$(date +%s)
+          tools/mk-mesa.sh > "$W/logs/mesa.log" 2>&1 || { tail -80 "$W/logs/mesa.log"; exit 1; }
+          tail -2 "$W/logs/mesa.log"; echo "mesa: $(( $(date +%s) - t0 )) s"
+      - name: PanVK (tools/mk-panvk.sh ios, as build-installer.sh runs it for the S9+)
+        run: |
+          cd "$W/scion-kernel"
+          export THEOS=$W/theos
+          t0=$(date +%s)
+          tools/mk-panvk.sh ios > "$W/logs/panvk.log" 2>&1 || { tail -80 "$W/logs/panvk.log"; exit 1; }
+          tail -2 "$W/logs/panvk.log"; echo "panvk: $(( $(date +%s) - t0 )) s"
+      - name: Pack, with licences, notices and sources (tools/prebuilt-pack.sh)
+        id: pack
+        run: |
+          tools/prebuilt-pack.sh "$W" rel "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          echo "rev=$(git -C "$W/scion-kernel" rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          cat rel/BUILDINFO.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: prebuilt
+          path: rel/
+          retention-days: 14
+      - name: Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: prebuilt-logs
+          path: /mnt/w/logs
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # The set as build-installer.sh takes it: from a directory (--prebuilt-from), with no kernel built and none of the
+  # from-source toolchain installed (no flex, bison, m4, autotools, meson, ninja, Rust): an --open build of the phones
+  # whose kernels are in the set, which still compiles the loader and the open small root here.
+  use:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: prebuilt
+          path: rel
+      - name: Work space on /mnt
+        run: sudo mkdir -p "$W" && sudo chown -R "$(id -u):$(id -g)" "$W"
+      - name: Packages (what build-installer.sh asks for with prebuilts)
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends git curl clang lld python3 perl xz-utils 7zip
+          for t in flex bison meson ninja rustc cargo autoreconf; do ! command -v $t >/dev/null || echo "($t is on the runner already)"; done
+      - name: Cache theos
+        uses: actions/cache@v4
+        with:
+          path: /mnt/w/theos
+          key: theos-iOSToolchain-x86_64-iPhoneOS16.5-v1
+      - name: build-installer.sh --open --prebuilt-from rel (the phones the set has kernels for)
+        env:
+          KREF: ${{ inputs.kernel_ref }}
+        run: |
+          D=$(cd rel && ls kernel-*.tar.xz | sed 's/^kernel-//; s/\.tar\.xz$//' | grep -v '^star2lte$' | paste -sd, -)
+          # (star2lte: the pinned device repository is older than the S9+'s defaults, which stops universal/mkinstaller.sh on
+          # main as well; see the build-installer workflow)
+          echo "phones: $D"
+          ./build-installer.sh --open --prebuilt-from rel --device "$D" --work "$W" --out "$W/out" ${KREF:+--kernel-ref "$KREF"} | tee "$W/use.log"
+          grep -q 'prebuilt, not built here' "$W/use.log"
+          ! ls "$W"/logs/kernel-*.log 2>/dev/null       # no kernel was built
+          test ! -e "$W/scion-kernel/xnu-src/xnu-8796.121.2"   # ... nor its tree laid out
+          test ! -e "$W/scion-kernel/xnu-deps/host/bin/mig"    # ... nor xnu-deps/setup.sh run
+          (cd "$W/out" && sha256sum -c scion-exynos9810-installer.zip.sha256)
+      - name: Mesa's and PanVK's archives are the ones this kernel revision's userland/build.sh accepts without rebuilding
+        run: |
+          K=$W/scion-kernel
+          for a in mesa-gles-ios panvk-ios; do mkdir -p "/tmp/$a" && tar -xJf "rel/$a.tar.xz" -C "/tmp/$a"; done
+          want=$(cat "$K"/tools/mesa/*.patch "$K"/tools/mesa/hakios-drm/* | sha256sum)
+          [ "$(cat /tmp/mesa-gles-ios/built-from)" = "$want" ] && echo "mesa: built-from matches"
+          want=$(cat "$K"/tools/mesa/*.patch "$K"/tools/mesa/panvk/*.patch "$K"/tools/mesa/hakios-drm/* | sha256sum)
+          [ "$(cat /tmp/panvk-ios/built-from)" = "$want" ] && echo "panvk: built-from matches"
+          file /tmp/mesa-gles-ios/libOSMesa.8.dylib /tmp/panvk-ios/libvulkan_panfrost.dylib
+      - name: Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: prebuilt-use-logs
+          path: /mnt/w/logs
+          retention-days: 7
+          if-no-files-found: ignore
+
+  publish:
+    needs: [build, use]
+    if: github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: prebuilt
+          path: rel
+      - name: Publish (never over an existing release)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          REV: ${{ needs.build.outputs.rev }}
+        run: |
+          TAG=prebuilt-${REV:0:12}
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "$TAG is published already; its SHA-256s may be pinned, so it is not replaced" >&2
+            exit 1
+          fi
+          gh release create "$TAG" rel/* --title "$TAG" --notes-file rel/BUILDINFO.md --target "${{ github.sha }}"
