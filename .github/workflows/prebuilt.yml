@@ -58,6 +58,8 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     timeout-minutes: 240
+    # the pinned revision's set is the one that matters; main's says early what the next pin will meet
+    continue-on-error: ${{ matrix.kref == 'main' }}
     strategy:
       fail-fast: false
       matrix:
@@ -97,7 +99,11 @@ jobs:
           cd "$W/scion-kernel"
           export THEOS=$W/theos
           t0=$(date +%s)
-          tools/mk-mesa.sh > "$W/logs/mesa.log" 2>&1 || { tail -80 "$W/logs/mesa.log"; exit 1; }
+          tools/mk-mesa.sh > "$W/logs/mesa.log" 2>&1 || {
+            for f in "$W/logs/mesa.log" xnu-deps/build/mesa/meson-setup.log xnu-deps/build/mesa/ninja.log; do
+              [ -s "$f" ] && { echo "== $f"; grep -E -B2 -A12 -m3 'ERROR|FAILED|error:' "$f" || tail -40 "$f"; }
+            done
+            exit 1; }
           tail -2 "$W/logs/mesa.log"; echo "mesa: $(( $(date +%s) - t0 )) s"
       - name: PanVK (tools/mk-panvk.sh ios, as build-installer.sh runs it for the S9+)
         run: |
@@ -109,7 +115,9 @@ jobs:
           if tools/mk-panvk.sh ios > "$W/logs/panvk.log" 2>&1; then
             tail -2 "$W/logs/panvk.log"; echo "panvk: $(( $(date +%s) - t0 )) s"
           else
-            tail -30 "$W/logs/panvk.log"
+            for f in "$W/logs/panvk.log" xnu-deps/build/panvk/meson-setup.log xnu-deps/build/panvk/ninja.log; do
+              [ -s "$f" ] && { echo "== $f"; grep -E -B2 -A12 -m3 'ERROR|FAILED|error:|FAILED --' "$f" || tail -30 "$f"; }
+            done
             rm -f xnu-deps/build/panvk/out/built-from
             echo "::warning::PanVK does not build at this revision (tools/mk-panvk.sh ios): panvk-ios is left out of the set"
           fi
@@ -140,6 +148,7 @@ jobs:
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    continue-on-error: ${{ matrix.kref == 'main' }}
     strategy:
       fail-fast: false
       matrix:
