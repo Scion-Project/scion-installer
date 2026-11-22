@@ -137,7 +137,11 @@ MD
 	published="$published $name"
 }
 mesa_pack mesa-gles-ios "$K/xnu-deps/build/mesa/out" tools/mk-mesa.sh "$K"/tools/mesa/*.patch "$K/tools/mesa/hakios-drm"
-mesa_pack panvk-ios "$K/xnu-deps/build/panvk/out" tools/mk-panvk.sh "$K"/tools/mesa/*.patch "$K/tools/mesa/panvk" "$K/tools/mesa/hakios-drm"
+if [ -f "$K/xnu-deps/build/panvk/out/built-from" ]; then
+	mesa_pack panvk-ios "$K/xnu-deps/build/panvk/out" tools/mk-panvk.sh "$K"/tools/mesa/*.patch "$K/tools/mesa/panvk" "$K/tools/mesa/hakios-drm"
+else
+	echo "prebuilt-pack: no PanVK built (tools/mk-panvk.sh ios): panvk-ios left out; build-installer.sh then builds it" >&2
+fi
 
 # --- the sums and the notes --------------------------------------------------------------------------------------------
 (cd "$OUT" && sha256sum ./*.tar.xz | sed 's| \./| |' > SHA256SUMS)

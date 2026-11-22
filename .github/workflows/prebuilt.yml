@@ -58,8 +58,15 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        # a pull request checks the pinned revision and the kernel repository's main (what the next pin will be)
+        kref: ${{ fromJSON(github.event_name == 'pull_request' && '["pinned", "main"]' || '["input"]') }}
     outputs:
       rev: ${{ steps.pack.outputs.rev }}
+    env:
+      KREF: ${{ (matrix.kref == 'main' && 'main') || inputs.kernel_ref }}
     steps:
       - uses: actions/checkout@v4
       - name: Work space on /mnt
@@ -75,8 +82,6 @@ jobs:
           path: /mnt/w/theos
           key: theos-iOSToolchain-x86_64-iPhoneOS16.5-v1
       - name: The kernels (build-installer.sh --open --from-source; no IPSW)
-        env:
-          KREF: ${{ inputs.kernel_ref }}
         run: |
           set -o pipefail
           # Only the kernels are taken from this build. Its last step, the --open zip, is not needed here, and at the pinned
@@ -99,8 +104,15 @@ jobs:
           cd "$W/scion-kernel"
           export THEOS=$W/theos
           t0=$(date +%s)
-          tools/mk-panvk.sh ios > "$W/logs/panvk.log" 2>&1 || { tail -80 "$W/logs/panvk.log"; exit 1; }
-          tail -2 "$W/logs/panvk.log"; echo "panvk: $(( $(date +%s) - t0 )) s"
+          # (at some revisions PanVK's patches do not apply, and the S9+'s Metal does not build from source either: then the
+          # set has no panvk-ios, and build-installer.sh builds it, as before)
+          if tools/mk-panvk.sh ios > "$W/logs/panvk.log" 2>&1; then
+            tail -2 "$W/logs/panvk.log"; echo "panvk: $(( $(date +%s) - t0 )) s"
+          else
+            tail -30 "$W/logs/panvk.log"
+            rm -f xnu-deps/build/panvk/out/built-from
+            echo "::warning::PanVK does not build at this revision (tools/mk-panvk.sh ios): panvk-ios is left out of the set"
+          fi
       - name: Pack, with licences, notices and sources (tools/prebuilt-pack.sh)
         id: pack
         run: |
@@ -109,14 +121,14 @@ jobs:
           cat rel/BUILDINFO.md >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         with:
-          name: prebuilt
+          name: prebuilt-${{ matrix.kref }}
           path: rel/
           retention-days: 14
       - name: Logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: prebuilt-logs
+          name: prebuilt-logs-${{ matrix.kref }}
           path: /mnt/w/logs
           retention-days: 7
           if-no-files-found: ignore
@@ -128,11 +140,15 @@ jobs:
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        kref: ${{ fromJSON(github.event_name == 'pull_request' && '["pinned", "main"]' || '["input"]') }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: prebuilt
+          name: prebuilt-${{ matrix.kref }}
           path: rel
       - name: Work space on /mnt
         run: sudo mkdir -p "$W" && sudo chown -R "$(id -u):$(id -g)" "$W"
@@ -147,15 +163,16 @@ jobs:
           path: /mnt/w/theos
           key: theos-iOSToolchain-x86_64-iPhoneOS16.5-v1
       - name: build-installer.sh --open --prebuilt-from rel (the phones the set has kernels for)
-        env:
-          KREF: ${{ inputs.kernel_ref }}
         run: |
+          # the kernel revision the set was built from (its notes say)
+          KREF=$(sed -n 's/^For build-installer.sh (KERNEL_REV=\([0-9a-f]*\)).*/\1/p' rel/BUILDINFO.md)
+          test -n "$KREF"
           D=$(cd rel && ls kernel-*.tar.xz | sed 's/^kernel-//; s/\.tar\.xz$//' | grep -v '^star2lte$' | paste -sd, -)
           # (star2lte: the pinned device repository is older than the S9+'s defaults, which stops universal/mkinstaller.sh on
           # main as well; see the build-installer workflow)
           echo "phones: $D"
           set -o pipefail
-          ./build-installer.sh --open --prebuilt-from rel --device "$D" --work "$W" --out "$W/out" ${KREF:+--kernel-ref "$KREF"} | tee "$W/use.log"
+          ./build-installer.sh --open --prebuilt-from rel --device "$D" --work "$W" --out "$W/out" --kernel-ref "$KREF" | tee "$W/use.log"
           grep -q 'prebuilt, not built here' "$W/use.log"
           ! ls "$W"/logs/kernel-*.log 2>/dev/null       # no kernel was built
           test ! -e "$W/scion-kernel/xnu-src/xnu-8796.121.2"   # ... nor its tree laid out
@@ -164,17 +181,24 @@ jobs:
       - name: Mesa's and PanVK's archives are the ones this kernel revision's userland/build.sh accepts without rebuilding
         run: |
           K=$W/scion-kernel
-          for a in mesa-gles-ios panvk-ios; do mkdir -p "/tmp/$a" && tar -xJf "rel/$a.tar.xz" -C "/tmp/$a"; done
+          tar -xJf rel/mesa-gles-ios.tar.xz -C /tmp
           want=$(cat "$K"/tools/mesa/*.patch "$K"/tools/mesa/hakios-drm/* | sha256sum)
           [ "$(cat /tmp/mesa-gles-ios/built-from)" = "$want" ] && echo "mesa: built-from matches"
-          want=$(cat "$K"/tools/mesa/*.patch "$K"/tools/mesa/panvk/*.patch "$K"/tools/mesa/hakios-drm/* | sha256sum)
-          [ "$(cat /tmp/panvk-ios/built-from)" = "$want" ] && echo "panvk: built-from matches"
-          file /tmp/mesa-gles-ios/libOSMesa.8.dylib /tmp/panvk-ios/libvulkan_panfrost.dylib
+          file /tmp/mesa-gles-ios/libOSMesa.8.dylib
+          if [ -f rel/panvk-ios.tar.xz ]; then
+            tar -xJf rel/panvk-ios.tar.xz -C /tmp
+            want=$(shopt -s nullglob; cat "$K"/tools/mesa/*.patch "$K"/tools/mesa/panvk/*.patch "$K"/tools/mesa/hakios-drm/* | sha256sum)
+            [ "$(cat /tmp/panvk-ios/built-from)" = "$want" ] && echo "panvk: built-from matches"
+            file /tmp/panvk-ios/libvulkan_panfrost.dylib
+          else
+            echo "no panvk-ios in this set"
+          fi
+          ls -la rel; cat rel/SHA256SUMS
       - name: Logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: prebuilt-use-logs
+          name: prebuilt-use-logs-${{ matrix.kref }}
           path: /mnt/w/logs
           retention-days: 7
           if-no-files-found: ignore
@@ -188,7 +212,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: prebuilt
+          name: prebuilt-input
           path: rel
       - name: Publish (never over an existing release)
         env:
