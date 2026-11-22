@@ -64,7 +64,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Work space on /mnt
         run: sudo mkdir -p "$W" && sudo chown -R "$(id -u):$(id -g)" "$W" && df -h / /mnt
-      - name: Packages (the full from-source toolchain: this is the one machine that needs it)
+      - name: "Packages (the full from-source toolchain: this is the one machine that needs it)"
         run: |
           sudo apt-get update -q
           sudo apt-get install -y -q --no-install-recommends build-essential git curl clang lld python3 python3-venv \
