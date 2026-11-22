@@ -77,7 +77,16 @@ jobs:
       - name: The kernels (build-installer.sh --open --from-source; no IPSW)
         env:
           KREF: ${{ inputs.kernel_ref }}
-        run: ./build-installer.sh --open --from-source --device all --work "$W" --out "$W/out" ${KREF:+--kernel-ref "$KREF"}
+        run: |
+          set -o pipefail
+          # Only the kernels are taken from this build. Its last step, the --open zip, is not needed here, and at the pinned
+          # revision it stops on the S9+ (universal/mkinstaller.sh: devices/star2lte is older than its defaults; the
+          # build-installer workflow fails on main the same way): that alone is let pass.
+          if ! ./build-installer.sh --open --from-source --device all --work "$W" --out "$W/out" ${KREF:+--kernel-ref "$KREF"} 2>&1 | tee "$W/kernels.log"; then
+            grep -q 'universal/mkinstaller.sh failed' "$W/kernels.log" || exit 1
+            echo "::warning::the --open zip was not made (universal/mkinstaller.sh); the kernels were"
+          fi
+          ls -la "$W"/kernels/kernel-starlte "$W"/kernels/kernel-star2lte "$W"/kernels/kernel-crownlte
       - name: Mesa's OpenGL ES library (tools/mk-mesa.sh, as userland/build.sh GL=1 runs it)
         run: |
           cd "$W/scion-kernel"
@@ -145,6 +154,7 @@ jobs:
           # (star2lte: the pinned device repository is older than the S9+'s defaults, which stops universal/mkinstaller.sh on
           # main as well; see the build-installer workflow)
           echo "phones: $D"
+          set -o pipefail
           ./build-installer.sh --open --prebuilt-from rel --device "$D" --work "$W" --out "$W/out" ${KREF:+--kernel-ref "$KREF"} | tee "$W/use.log"
           grep -q 'prebuilt, not built here' "$W/use.log"
           ! ls "$W"/logs/kernel-*.log 2>/dev/null       # no kernel was built
