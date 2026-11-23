@@ -42,10 +42,10 @@
 # published. Nothing of Apple's is in this repository or in the kernel's; the project ships none and downloads none.
 set -euo pipefail
 
-# The kernel repository's commit this script builds: main of 10 Nov (13c4fce), which has the web clips (--webclips needs
-# WEBCLIPS=1 in userland/build.sh) and the Mesa patches that apply in order (the revision before it stopped userland/build.sh on
-# Linux: turnip-darwin.patch's hunk on Mesa's meson.build did not apply after panfrost-darwin.patch). Checked: a from-scratch
-# --open build on Ubuntu 24.04 with Mesa built on top (the fresh-build workflow), and a full build from an IPSW on macOS.
+# The kernel repository's commit this script builds: main of 22 Nov (273baa4). On top of 10 Nov's 13c4fce it has the PanVK
+# patch order (panvk-darwin.patch applies after turnip-darwin.patch), builds with newer host compilers (clang 23: a Class passed
+# as id; flex 2.7: -D_DARWIN_C_SOURCE for its scanners) and Mesa GL's hakios-drm declarations. Checked: a full build of all three
+# phones from an IPSW on CachyOS (clang 23, flex 2.7.1), and that zip booted on a Galaxy S9 (SM-G960F/DS) with sound.
 # Its devices/manifest.conf pins the device repositories (scion-starlte, scion-star2lte, scion-crownlte); tools/hakios-device.py
 # sync checks them out there.
 KERNEL_REPO=https://github.com/Scion-Project/scion-kernel.git
