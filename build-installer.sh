@@ -49,7 +49,7 @@ set -euo pipefail
 # Its devices/manifest.conf pins the device repositories (scion-starlte, scion-star2lte, scion-crownlte); tools/hakios-device.py
 # sync checks them out there.
 KERNEL_REPO=https://github.com/Scion-Project/scion-kernel.git
-KERNEL_REV=13c4fce84d7cb8e3ab4d9b4df45ad71bfd75987b
+KERNEL_REV=273baa4dfeabcf000807769d93d8ce5aca1a6b42
 # The kernels the kernels workflow built from KERNEL_REV and published as this repository's release kernels-<its first 12
 # hex>, for --prebuilt-kernel. They move with KERNEL_REV: run the workflow for the new revision, then pin what it printed.
 # Empty: none published for this revision yet.
