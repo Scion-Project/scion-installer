@@ -12,14 +12,47 @@ Only the tooling lives here. Everything an installer carries is built locally, f
 So an installer is yours, to hand on privately. It is never published and never committed; `.gitignore` keeps `*.zip`,
 `*.img` and `*.apfs` out.
 
-## iOS 27 on the Galaxy S9 is not installed from here
+## iOS 27 on the Galaxy S9: `build-installer.sh --ios27`
 
-The installers of this repository carry iOS 16.5. iOS 27 (experimental, Galaxy S9 SM-G960F only) uses a different layout: a boot
-image and a raw system image written to `BOOT` and `USERDATA` from TWRP over adb, with no zip (the system image is about 20 GiB, and
-TWRP's zip reader has no Zip64). You build both yourself from source and your own iPhone 11 restore image. It erases Android's data
-and it can hang. Since 17 November its kernel starts the S9's Wi-Fi, audio, Bluetooth and modem by default, but iOS uses them only
-with root steps that the one-command root build does not run yet, and that kernel has not yet been run on a phone with all of them
-on. The one page with the steps, what works (and how far each part was seen) and how to get back is in the kernel repository: [iOS 27 on a Galaxy S9: build it and install it yourself](https://github.com/Scion-Project/scion-kernel/blob/main/docs/ios27/INSTALL-S9.md).
+iOS 16.5 is the zip below. **iOS 27.2.1** (experimental, Galaxy S9 **SM-G960F** only) is built differently: a boot image and
+a raw system image (about 20 GiB) written to `BOOT` and `USERDATA` from TWRP over adb, with no zip (TWRP's zip reader has no
+Zip64). It **erases Android's data**, and it can hang (the kernel returns to TWRP by itself 24 hours after every boot).
+`--ios27` runs the kernel repository's page [iOS 27 on a Galaxy S9: build it and install it yourself](https://github.com/Scion-Project/scion-kernel/blob/main/docs/ios27/INSTALL-S9.md)
+in order, at a pinned revision, and stops at the first step that fails. Read that page's "What works" and "Known problems"
+first.
+
+What you need, all of it yours:
+
+| | |
+|---|---|
+| Phone | Galaxy S9 SM-G960F (Exynos), OEM unlock done, **TWRP in recovery**, charged |
+| Mac | Apple silicon, about 110 GB free (the root build alone wants 62 GB when it starts) |
+| Xcode 16.4 and the Kernel Debug Kit 26.5 (25F71) | from Apple's developer downloads; `export DEVELOPER_DIR=.../Xcode_16.4.app/Contents/Developer KDKROOT=.../KDK_26.5_25F71.kdk` |
+| Restore image | **iPhone12,1, iOS 27.2.1, build 24B156**: `iPhone12,1_27.2.1_24B156_Restore.ipsw`, 10 977 415 204 bytes, from Apple (Finder, or `ipsw download ipsw --device iPhone12,1 --build 24B156`) |
+| Tools | `git`, `jq`, Android's `adb`; a Python 3 with `numpy` and `ziglang` (`PY=`; else one is made in the work directory) |
+
+```sh
+# the phone in TWRP (Volume Up + Bixby + Power), on USB; SERIAL is what `adb devices` prints
+./build-installer.sh --ios27 --ipsw ~/Downloads/iPhone12,1_27.2.1_24B156_Restore.ipsw --serial SERIAL --dry-run
+```
+
+1. It checks your IPSW against the kernel repository's `tools/ios27/builds/24B156.conf`: its size, its `BuildManifest.plist`
+   (27.2.1, 24B156, iPhone12,1) and its SHA-256.
+2. It builds the kernel (`OS_PROFILE=ios-27 make kernel`, with the S9's Wi-Fi driver).
+3. It unpacks your inputs from the IPSW (`fetch-apple-inputs.sh`: three disk images and the iPhone 11's device tree).
+4. It copies your phone's TWRP (read only) as the template, builds the loader and makes the boot image: the panel's own
+   828 x 1702 screen and the line the project's test phones boot.
+5. With `--dry-run` it stops here: `out/ios27/xnu-boot-ios27.img` and its SHA-256, nothing written to the phone.
+
+Then the root: it needs the userland of INSTALL-S9.md section 4 laid out in a directory (`--overlay DIR`; that section has
+no single command yet) and `sudo`. Run the same command without `--dry-run`, with `--overlay DIR`. Add `--flash SERIAL` to
+install at the end: it keeps a copy of Android's boot partition, then writes the root to `USERDATA` (it asks for the word
+`ERASE`) and the boot image to `BOOT`. Each write is read back and compared. Nothing else on the phone is written: not
+`RECOVERY`, `EFS`, `RADIO` or `PARAM`. Without `--flash` it prints the two `flash.sh` commands. The way back is TWRP, and
+then Android's own boot image (`out/ios27/android-boot-SERIAL.img`) and a data wipe.
+
+`./build-installer.sh --ios27 --help` lists every option (`--kernel`, `--inputs`, `--template`, `--kernel-ref`, ...). The
+images carry your IPSW's files and your iPhone's identity: never publish or share them.
 
 ## Build it in one command: `build-installer.sh`
 

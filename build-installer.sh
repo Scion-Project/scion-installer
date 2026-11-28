@@ -39,6 +39,8 @@
 #   --open                  no IPSW at all: the placeholder loader (no Apple data), a stand-in system image and the
 #                           open small root. The zip installs, but iOS does not start: what CI runs.
 #   -- ARGS...              extra boot-arguments, over the defaults (as for the mkinstaller.sh scripts)
+#   --ios27                 iOS 27 for the Galaxy S9 (SM-G960F) instead, from your iPhone 11 IPSW (iPhone12,1, 27.2.1):
+#                           every other argument goes to ios27/build-ios27.sh (./build-installer.sh --ios27 --help)
 #
 # On macOS: Xcode or the command-line tools, and from Homebrew: sevenzip lld llvm bison meson ninja.
 # On Linux: theos's toolchain and iPhoneOS16.5.sdk (made in the work directory if $THEOS has none), and the packages
@@ -49,6 +51,10 @@
 # The zip carries iOS's own files from your IPSW, and the loader your iPhone's identity: it is yours, never to be
 # published. Nothing of Apple's is in this repository or in the kernel's; the project ships none and downloads none.
 set -euo pipefail
+
+# iOS 27 (Galaxy S9 SM-G960F only) is another build altogether: ios27/build-ios27.sh (its own --help) takes every argument.
+for a in "$@"; do [ "$a" != --ios27 ] || { args=(); for b in "$@"; do [ "$b" = --ios27 ] || args+=("$b"); done
+	exec "$(cd "$(dirname "$0")" && pwd)/ios27/build-ios27.sh" "${args[@]}"; }; done
 
 # The kernel repository's commit this script builds: main of 22 Nov (273baa4). On top of 10 Nov's 13c4fce it has the PanVK
 # patch order (panvk-darwin.patch applies after turnip-darwin.patch), builds with newer host compilers (clang 23: a Class passed
