@@ -65,9 +65,16 @@ Options:
 - `--kernel DEVICE=FILE`: a kernel someone already built (`make kernel`'s `hakios-kernel`) for that phone, instead of
   building it here; it has to come from the same kernel revision as `--kernel-ref`, which the binary cannot show, so
   that part is the giver's word. Repeatable.
-- `--prebuilt-kernel`: the kernels CI built from the pinned revision, from this repository's release
-  `kernels-<revision>` (the `kernels` workflow), each checked against the SHA-256 pinned in `build-installer.sh`, instead
-  of building them here. Only for the pinned revision; when none are published for it yet, the script says so.
+- **Prebuilt by default**: the parts that come from no IPSW (the three phones' kernels, Mesa's OpenGL ES library and
+  PanVK) are downloaded from this repository's release `prebuilt-<revision>` (the `prebuilt` workflow), each checked
+  against the SHA-256 pinned in `build-installer.sh`, instead of being compiled here. Then the machine needs no flex,
+  bison, m4, autotools, meson, ninja or pkg-config, about 6 GB less disk, and none of the kernel's or Mesa's build
+  time. Each archive carries its licences (`LICENSES/`) and its exact sources (`SOURCE.md`). Only for the pinned
+  revision; while none is published for it, or with `--kernel-ref`, everything is built here and the script says so.
+  What is published, and what is not and why, is in [What is prebuilt](#what-is-prebuilt).
+- `--from-source`: build everything here, as before. `--prebuilt-from DIR`: the prebuilt parts from a copy of the
+  release in DIR, checked against DIR's `SHA256SUMS`. (`--prebuilt-kernel` is still accepted: it stops unless every
+  phone's kernel is prebuilt.)
 
 Run it again after a failure and it picks up where it stopped. The clone, the unpacked IPSW, XNU's tree and Mesa are
 kept in `scion-build`. To start clean, delete `scion-build`.
@@ -77,6 +84,7 @@ What it takes:
 | | macOS (Apple silicon or Intel) | Linux (x86_64) |
 |---|---|---|
 | Tools | Xcode or its command-line tools (`xcode-select --install`), and `brew install sevenzip lld llvm bison meson ninja zstd` | `sudo apt-get install build-essential git curl zstd clang lld python3 python3-venv perl xz-utils flex bison m4 autoconf automake libtool-bin uuid-dev llvm meson ninja-build pkg-config 7zip` (Ubuntu 24.04; 7-Zip must be 23 or newer) |
+| Tools with the prebuilt parts (the default, once a release is pinned) | the same without `bison meson ninja` | `sudo apt-get install git curl zstd clang lld python3 perl xz-utils llvm 7zip` |
 | `ldid` (optional) | `brew install ldid` | `sudo apt-get install ldid` (Ubuntu 22.04 and later; universe) |
 | The iOS SDK the kernel is built against | fetched by `xnu-deps/setup.sh` | theos's Linux toolchain and `iPhoneOS16.5.sdk`, from `$THEOS` or `~/theos` when they are there, otherwise fetched into `scion-build/theos` |
 | Disk | 20 GB free besides the IPSW: `scion-build` ends at about 10 GB (15 at most while it runs), the zip is 2.4 GB | the same, plus 1.5 GB for theos |
@@ -91,6 +99,25 @@ CI (`.github/workflows/build-installer.yml`) runs the whole script on Linux on e
 mode there is no IPSW: the loader gets the placeholder identity (`xnuloader/mkidentity.sh --placeholder`), the small
 root is the open one, and the system image is an empty stand-in. CI also runs `universal/selftest.sh` and checks that
 the script refuses anything but the 20F66 IPSW. The zip that comes out installs, but iOS does not start from it.
+
+### What is prebuilt
+
+The `prebuilt` workflow builds, from the pinned kernel revision and with **no IPSW**, what does not depend on one, and
+publishes it as the release `prebuilt-<revision>` with `SHA256SUMS`:
+
+| Archive | What | Licence | Why there is nothing of Apple's or a vendor's in it |
+|---|---|---|---|
+| `kernel-starlte`, `kernel-crownlte` | the kernels (`make <phone>_defconfig && make kernel`) | APSL 2.0 (XNU and `drivers/`), MIT / MIT-0 (Scion's files), ISC (the S9's brcmfmac) | XNU is Apple's open source, published under the APSL, with Scion's changes; compiled against the public SDK's headers. No firmware is built in. |
+| `kernel-star2lte` | the S9+'s kernel, **only when it was built without its camera driver** | as above | With the camera driver it holds the sensors' setfiles made from Samsung's GPL headers (firmware in substance): then it is left out, and built on your machine. |
+| `mesa-gles-ios` | Mesa 25.0.7's OpenGL ES library (`tools/mk-mesa.sh`) | MIT (Mesa's licence list inside) | Mesa and Scion's patches, compiled against the public SDK's headers and stubs. |
+| `panvk-ios` | PanVK, Mesa's Vulkan driver for the Mali (`tools/mk-panvk.sh ios`) | MIT | as Mesa |
+
+Still made on your machine, and never published: the system image and the small root (they hold files of your IPSW,
+and launchd jobs made from its); the loader (it carries your iPhone's identity from the IPSW's device tree), so the
+boot images that hold it; the phones' firmware (each device repository's `tools/fetch-firmware.sh` fetches it from its
+own source, by its pinned SHA-256); and for the S9+, metal2vulkan (GPL-2.0-or-later OR LGPL-3.0-or-later: whether its
+binary can be distributed is still open in the kernel repository's `COMPLIANCE.md`). The theos SDK and toolchain that
+CI compiles with are fetched from theos at build time and are not in any archive.
 
 ### Troubleshooting
 
