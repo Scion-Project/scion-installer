@@ -134,6 +134,8 @@ if [ -z "$TEMPLATE" ]; then
 	TEMPLATE=$OUT/recovery-template.img
 	"$K/tools/ios27/s9/flash.sh" "$SERIAL" pull-template "$TEMPLATE"
 fi
+# the S9's device repository (its firmware's sums): make-boot-image.sh puts the sensor hub's image in the device tree
+(cd "$K" && python3 tools/hakios-device.py sync starlte)
 (cd "$K" && tools/ios27/s9/build-loader.sh)
 REC=(); [ -n "$OVERLAY" ] || REC=(--inject-record none)
 (cd "$K" && tools/ios27/s9/make-boot-image.sh --kernel hakios-kernel --donor-adt inputs/n104ap.adt --template "$TEMPLATE" \
@@ -152,7 +154,6 @@ hdiutil attach -readonly -nobrowse -imagekey diskimage-class=CRawDiskImage -moun
 rc=0; (cd "$K" && tools/ios27/s9/prepare-root-inputs.sh "$mnt/System/Library/Caches/com.apple.dyld" "$OVERLAY") || rc=$?
 hdiutil detach "$mnt" >/dev/null || true; rmdir "$mnt" 2>/dev/null || true
 [ "$rc" = 0 ] || die "prepare-root-inputs.sh failed"
-(cd "$K" && python3 tools/hakios-device.py sync starlte)
 sudo IOS27_BUILD="$BUILD" PY="$PY" DEVELOPER_DIR="$DEVELOPER_DIR" OUT="$OUT/root-full.img" "$K/tools/ios27/s9/build-root.sh" "$IN"
 [ -f "$OUT/root-full.img" ] && [ -f "$OUT/root-full.img.inject" ] || die "no root image (and its .inject record) in $OUT"
 # the boot image again, with the root's record of injected libraries (they must agree)
